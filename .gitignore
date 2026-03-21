@@ -50,11 +50,8 @@ frontend/.vite/
 .env.production
 
 # ── Project-specific outputs ──────────────────────────────────
-# Generated text, chunks, and chat history produced at runtime
-backend/outputs/*.txt
-backend/outputs/*.jsonl
-backend/outputs/*.json
-backend/outputs/chat_history/
+# All runtime-generated files: extracted text, chunks, chat/exam history, benchmarks
+backend/outputs/
 
 # Uploaded PDFs (temp storage)
 backend/uploads/

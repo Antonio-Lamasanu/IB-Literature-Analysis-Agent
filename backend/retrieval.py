@@ -204,6 +204,7 @@ class RetrievalCorpus:
     doc_freq: Counter[str]
     avg_doc_length: float
     source_mode: str
+    chunk_embeddings: "Any" = None  # np.ndarray shape (N, 384), row i = features[i]; None = BM25-only
 
 
 def _normalize_space(text: str) -> str:
@@ -240,10 +241,20 @@ def _build_chunk_cache_key(
 
     resolved = chunk_path.resolve()
     stat = resolved.stat()
+
+    emb_mtime = 0
+    try:
+        from embeddings import embeddings_path_for_chunks
+        emb_path = embeddings_path_for_chunks(resolved)
+        if emb_path.exists():
+            emb_mtime = emb_path.stat().st_mtime_ns
+    except Exception:
+        pass
+
     return (
         document_id or resolved.name,
         str(resolved),
-        stat.st_mtime_ns,
+        stat.st_mtime_ns ^ emb_mtime,
         stat.st_size,
     )
 
@@ -356,6 +367,23 @@ def _build_retrieval_corpus_from_chunks(chunk_records: list[dict[str, Any]]) -> 
     )
 
 
+def _load_chunk_embeddings(chunks_path: str | Path) -> "Any":
+    """Load .embeddings.npy next to chunks_path; return None if absent or unreadable."""
+    try:
+        import numpy as np
+        from embeddings import embeddings_path_for_chunks
+        emb_path = embeddings_path_for_chunks(chunks_path)
+        if not emb_path.exists():
+            return None
+        arr = np.load(str(emb_path)).astype(np.float32)
+        if arr.ndim != 2 or arr.shape[0] == 0:
+            return None
+        return arr
+    except Exception as exc:
+        logger.warning("Failed to load embeddings from %s: %s", chunks_path, exc)
+        return None
+
+
 def get_persisted_chunk_corpus(
     path: str | Path,
     *,
@@ -373,6 +401,25 @@ def get_persisted_chunk_corpus(
 
     records = load_persisted_chunks(path, document_id=document_id)
     corpus = _build_retrieval_corpus_from_chunks(records)
+
+    chunk_embeddings = _load_chunk_embeddings(path)
+    if chunk_embeddings is not None:
+        if chunk_embeddings.shape[0] == len(corpus.features):
+            corpus = RetrievalCorpus(
+                features=corpus.features,
+                doc_freq=corpus.doc_freq,
+                avg_doc_length=corpus.avg_doc_length,
+                source_mode=corpus.source_mode,
+                chunk_embeddings=chunk_embeddings,
+            )
+        else:
+            logger.warning(
+                "EMBEDDING SYNC MISMATCH for %s: embeddings have %d rows but corpus has "
+                "%d chunks. Re-upload or run scripts/regenerate_embeddings.py to fix. "
+                "Using BM25-only.",
+                path, chunk_embeddings.shape[0], len(corpus.features),
+            )
+
     with _cache_lock:
         return _remember_cache_value(_retrieval_corpus_cache, cache_key, corpus)
 
@@ -567,6 +614,11 @@ def _looks_near_duplicate(candidate: RetrievedExcerpt, selected: list[RetrievedE
     return False
 
 
+BM25_WEIGHT = 0.55
+SEMANTIC_WEIGHT = 0.35
+_HYBRID_EPS = 1e-9
+
+
 def _rank_persisted_excerpt_features(
     corpus: RetrievalCorpus,
     latest_user_question: str,
@@ -578,19 +630,57 @@ def _rank_persisted_excerpt_features(
         return []
 
     total_docs = len(corpus.features)
-    ranked: list[RetrievedExcerpt] = []
-    for feature in corpus.features:
-        bm25_score = _score_bm25_feature(
+
+    # BM25 pass — compute raw scores for all features up front
+    bm25_scores = [
+        _score_bm25_feature(
             feature,
             query_terms,
             doc_freq=corpus.doc_freq,
             total_docs=total_docs,
             avg_doc_length=corpus.avg_doc_length,
         )
-        if bm25_score <= 0:
-            continue
+        for feature in corpus.features
+    ]
 
-        total_score = bm25_score + _metadata_boost(feature, latest_user_question, query_terms)
+    # Semantic pass — only when embeddings are available
+    cosine_scores: list[float] | None = None
+    if corpus.chunk_embeddings is not None:
+        try:
+            import numpy as np
+            from embeddings import encode_texts
+            q_vec = encode_texts([latest_user_question])
+            if q_vec.shape[0] == 1:
+                cosine_scores = np.clip(
+                    corpus.chunk_embeddings @ q_vec[0], -1.0, 1.0
+                ).tolist()
+        except Exception as exc:
+            logger.warning("Semantic scoring failed (non-fatal): %s", exc)
+
+    # Min-max normalise BM25 across the full candidate set so it maps to [0, 1]
+    # before combining with cosine similarity (already in [-1, 1]).
+    min_bm25 = min(bm25_scores)
+    max_bm25 = max(bm25_scores)
+    bm25_range = max_bm25 - min_bm25 + _HYBRID_EPS
+
+    ranked: list[RetrievedExcerpt] = []
+    for i, feature in enumerate(corpus.features):
+        bm25_raw = bm25_scores[i]
+
+        if cosine_scores is not None:
+            norm_bm25 = (bm25_raw - min_bm25) / bm25_range
+            cos = cosine_scores[i]
+            total_score = BM25_WEIGHT * norm_bm25 + SEMANTIC_WEIGHT * cos
+            # Skip only if both signals are non-positive (semantically irrelevant)
+            if total_score <= 0 and bm25_raw <= 0:
+                continue
+        else:
+            # BM25-only: preserve original raw-score behaviour exactly
+            if bm25_raw <= 0:
+                continue
+            total_score = bm25_raw
+
+        total_score += _metadata_boost(feature, latest_user_question, query_terms)
         ranked.append(
             RetrievedExcerpt(
                 excerpt_id=feature.excerpt.excerpt_id,
@@ -934,7 +1024,8 @@ def retrieve_ranked_chunk_excerpts(
                 retrieve_candidates=retrieve_candidates,
             )
             if ranked:
-                return ranked, "persisted_chunk_bm25"
+                mode = "persisted_chunk_hybrid" if corpus.chunk_embeddings is not None else "persisted_chunk_bm25"
+                return ranked, mode
             fallback = [feature.excerpt for feature in corpus.features[: max(1, min(4, retrieve_candidates))]]
             return fallback, "fallback_persisted_chunks"
 

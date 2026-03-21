@@ -164,13 +164,10 @@ class DocumentRegistry:
         return None
 
     def list_all(self) -> list[DocumentRecord]:
-        """Return all registered documents, most recently created first."""
+        """Return registered documents whose text file still exists, most recently created first."""
         with self._lock:
-            return sorted(
-                self._records.values(),
-                key=lambda r: r.created_at,
-                reverse=True,
-            )
+            records = [r for r in self._records.values() if Path(r.text_path).exists()]
+        return sorted(records, key=lambda r: r.created_at, reverse=True)
 
     def find_reusable_by_source_fingerprint(self, fingerprint: str) -> DocumentRecord | None:
         with self._lock:

@@ -1,3 +1,5 @@
+Primu benchmark de test, folosit cu gemma2 9b si 4b
+
 ================================================================================
 BENCHMARK REPORT
 Document : Animal Farm by George Orwell

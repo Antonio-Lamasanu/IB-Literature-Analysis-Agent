@@ -1,12 +1,45 @@
 import hashlib
 import json
+import logging as _logging
 import re
+import threading as _threading
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
 
 CHUNK_SCHEMA_VERSION = "simple-novel-v1"
+
+# ---------------------------------------------------------------------------
+# spaCy lazy loader — used for NER (character extraction) and POS tagging
+# (description vs. narration classification). Falls back to regex heuristics
+# if en_core_web_md is not installed or spaCy is unavailable.
+# ---------------------------------------------------------------------------
+_nlp = None  # None = not tried; False = failed/unavailable
+_nlp_lock = _threading.Lock()
+
+
+def _get_nlp():
+    """Return cached spaCy pipeline, or None if unavailable."""
+    global _nlp
+    if _nlp is not None:
+        return _nlp if _nlp is not False else None
+    with _nlp_lock:
+        if _nlp is not None:
+            return _nlp if _nlp is not False else None
+        try:
+            import spacy
+            _nlp = spacy.load(
+                "en_core_web_md",
+                disable=["parser", "lemmatizer", "attribute_ruler"],
+            )
+            _logging.getLogger(__name__).info("spaCy en_core_web_md loaded.")
+        except Exception as exc:
+            _logging.getLogger(__name__).warning(
+                "spaCy unavailable (%s); using regex fallback for metadata.", exc
+            )
+            _nlp = False
+    return _nlp if _nlp else None
 
 PAGE_MARKER_RE = re.compile(r"^\s*===\s*PAGE\s+(\d+)\s*===\s*$", flags=re.IGNORECASE)
 HEADING_MARKER_RE = re.compile(r"^\s*===\s*HEADING:\s*(.+?)\s*===\s*$", flags=re.IGNORECASE)
@@ -566,7 +599,8 @@ def _estimate_dialogue_ratio(text: str) -> float:
     return round(max(0.0, min(1.0, ratio)), 2)
 
 
-def _extract_character_mentions(text: str) -> list[str]:
+def _extract_character_mentions_regex(text: str) -> list[str]:
+    """Regex-based character extraction — used as fallback when spaCy is unavailable."""
     candidates: Counter[str] = Counter()
     for titled_match in TITLED_NAME_RE.finditer(text):
         candidates[titled_match.group(1).strip()] += 2
@@ -587,16 +621,61 @@ def _extract_character_mentions(text: str) -> list[str]:
     return [name for name, score in ranked if score >= 2][:6]
 
 
+def _extract_character_mentions_spacy(text: str, nlp) -> list[str]:
+    """spaCy NER-based character extraction using PERSON entity labels."""
+    doc = nlp(text[:8_000])
+    candidates: Counter[str] = Counter()
+    for ent in doc.ents:
+        if ent.label_ == "PERSON":
+            name = ent.text.strip()
+            if not name or name.upper() == name:
+                continue
+            if any(w in NAME_STOPWORDS for w in name.split()):
+                continue
+            candidates[name] += 1
+    ranked = sorted(candidates.items(), key=lambda item: (-item[1], item[0]))
+    return [name for name, _ in ranked][:6]
+
+
+def _extract_character_mentions(text: str) -> list[str]:
+    if not text or not text.strip():
+        return []
+    nlp = _get_nlp()
+    if nlp is not None:
+        return _extract_character_mentions_spacy(text, nlp)
+    return _extract_character_mentions_regex(text)
+
+
+def _derive_unit_type_regex(text: str) -> str:
+    """Keyword-set unit type classifier — used as fallback when spaCy is unavailable."""
+    tokens = [token.lower() for token in re.findall(r"\b[\w']+\b", text)]
+    description_score = sum(1 for token in tokens if token in DESCRIPTION_HINTS) + text.count(",")
+    narration_score = sum(1 for token in tokens if token in NARRATION_HINTS)
+    return "description" if description_score > narration_score + 1 else "narration"
+
+
+def _derive_unit_type_spacy(text: str, nlp) -> str:
+    """POS-tag based unit type classifier for description vs. narration."""
+    doc = nlp(text[:8_000])
+    adj_count = sum(1 for t in doc if not t.is_stop and not t.is_punct and t.pos_ == "ADJ")
+    verb_count = sum(1 for t in doc if not t.is_stop and not t.is_punct and t.pos_ == "VERB")
+    adj_score = adj_count + text.count(",")
+    return "description" if adj_score > verb_count + 1 else "narration"
+
+
 def _derive_unit_type(text: str, *, has_dialogue: bool, dialogue_ratio: float) -> str:
+    # Dialogue detection stays regex-only (via _estimate_dialogue_ratio) —
+    # it is more reliable than POS counting for detecting quoted speech.
     if dialogue_ratio >= 0.6:
         return "dialogue"
     if has_dialogue and dialogue_ratio >= 0.2:
         return "mixed"
 
-    tokens = [token.lower() for token in re.findall(r"\b[\w']+\b", text)]
-    description_score = sum(1 for token in tokens if token in DESCRIPTION_HINTS) + text.count(",")
-    narration_score = sum(1 for token in tokens if token in NARRATION_HINTS)
-    return "description" if description_score > narration_score + 1 else "narration"
+    # Description vs. narration: spaCy POS tagging if available, regex fallback otherwise.
+    nlp = _get_nlp()
+    if nlp is not None:
+        return _derive_unit_type_spacy(text, nlp)
+    return _derive_unit_type_regex(text)
 
 
 def _build_chunk_record(

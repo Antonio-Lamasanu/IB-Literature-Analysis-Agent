@@ -527,6 +527,28 @@ def build_chunk_outputs(
     filtered_chunks_path: Path | None = None
 
     write_chunks_jsonl(chunks_path, chunks, include_raw=params.include_raw)
+
+    try:
+        from embeddings import encode_texts, embeddings_path_for_chunks
+        import numpy as _np
+        _emb_texts = [
+            str(c.content.get("text") or "").strip()
+            for c in chunks
+            if c.content.get("text")
+        ]
+        if _emb_texts:
+            _emb = encode_texts(_emb_texts)
+            if _emb.shape[0] == len(_emb_texts):
+                _np.save(str(embeddings_path_for_chunks(chunks_path)), _emb)
+                logger.info("Saved %d embeddings to %s", _emb.shape[0], chunks_path)
+            else:
+                logger.warning(
+                    "Embedding count mismatch (%d vs %d chunks); skipping save.",
+                    _emb.shape[0], len(_emb_texts),
+                )
+    except Exception as _exc:
+        logger.warning("Embedding generation failed (non-fatal): %s", _exc)
+
     if CHUNK_FILTER_FOR_EMBEDDING:
         filtered_chunks_path = OUTPUTS_DIR / f"{safe_stem}_{document_id}.chunks.filtered.jsonl"
         filtered_chunks = filter_chunks_for_embedding(
