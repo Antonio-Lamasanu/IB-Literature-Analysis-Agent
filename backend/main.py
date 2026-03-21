@@ -19,6 +19,8 @@ from chat_history import (
     create_chat_history_turn,
     load_chat_history,
 )
+from exam_service import ExamQuestionResult, GradingResult, generate_question, grade_answer
+from exam_history import append_exam_attempt, create_exam_attempt
 from chunking import (
     CHUNK_SCHEMA_VERSION,
     ChunkParams,
@@ -110,6 +112,7 @@ BASE_DIR = Path(__file__).resolve().parent
 UPLOADS_DIR = BASE_DIR / "uploads"
 OUTPUTS_DIR = BASE_DIR / "outputs"
 DEFAULT_CHAT_HISTORY_STORAGE_DIR = OUTPUTS_DIR / "chat_history"
+DEFAULT_EXAM_HISTORY_STORAGE_DIR = OUTPUTS_DIR / "exam_history"
 DOCUMENTS_INDEX_PATH = OUTPUTS_DIR / "documents.index.json"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -149,6 +152,10 @@ CHAT_HISTORY_MAX_EXCERPTS = parse_int_env("CHAT_HISTORY_MAX_EXCERPTS", 2)
 _chat_history_storage_dir_env = (os.getenv("CHAT_HISTORY_STORAGE_DIR") or "").strip()
 CHAT_HISTORY_STORAGE_DIR = Path(
     _chat_history_storage_dir_env or str(DEFAULT_CHAT_HISTORY_STORAGE_DIR)
+).expanduser()
+_exam_history_storage_dir_env = (os.getenv("EXAM_HISTORY_STORAGE_DIR") or "").strip()
+EXAM_HISTORY_STORAGE_DIR = Path(
+    _exam_history_storage_dir_env or str(DEFAULT_EXAM_HISTORY_STORAGE_DIR)
 ).expanduser()
 REUSE_PROCESSED_PDFS = parse_bool_env("REUSE_PROCESSED_PDFS", False)
 
@@ -673,6 +680,26 @@ async def process_pdf_endpoint(
                 source_fingerprint,
                 existing_record.document_id,
             )
+            if existing_record.title is None and llm_service.is_chat_available():
+                try:
+                    existing_text = existing_text_path.read_text(encoding="utf-8")
+                    title, author = await run_in_threadpool(
+                        llm_service.extract_title_and_author, existing_text[:1500]
+                    )
+                    existing_record = document_registry.update_title_author(
+                        existing_record.document_id, title=title, author=author
+                    ) or existing_record
+                    logger.info(
+                        "Extracted title=%r author=%r for reused document_id=%s",
+                        title,
+                        author,
+                        existing_record.document_id,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Title/author extraction failed for reused document_id=%s",
+                        existing_record.document_id,
+                    )
             background_tasks.add_task(remove_file, upload_path)
             download_name = f"{Path(existing_record.filename).stem}.txt"
             return FileResponse(
@@ -725,6 +752,16 @@ async def process_pdf_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate chunks: {exc}",
         ) from exc
+
+    if llm_service.is_chat_available():
+        try:
+            title, author = await run_in_threadpool(
+                llm_service.extract_title_and_author, final_text[:1500]
+            )
+            document_registry.update_title_author(document_id, title=title, author=author)
+            logger.info("Extracted title=%r author=%r for document_id=%s", title, author, document_id)
+        except Exception:
+            logger.warning("Title/author extraction failed for document_id=%s", document_id)
 
     background_tasks.add_task(remove_file, upload_path)
     # Keep /api/process-pdf outputs for reuse (for example as aiModel.py context input).
@@ -1102,4 +1139,165 @@ async def process_pdf_chunks_endpoint(
             "X-Chunk-Target-Tokens": str(chunks_result.chunk_target_tokens),
             "X-Chunk-Overlap-Tokens": str(chunks_result.chunk_overlap_tokens),
         },
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Exam Mode — Pydantic models                                                  #
+# --------------------------------------------------------------------------- #
+
+class GenerateQuestionRequest(BaseModel):
+    document_id: str = Field(..., min_length=1, max_length=128)
+    paper_type: Literal["paper1", "paper2"] = "paper1"
+
+
+class GenerateQuestionResponse(BaseModel):
+    question: str
+    paper_type: str
+    inference_seconds: float
+
+
+class SubmitAnswerRequest(BaseModel):
+    document_id: str = Field(..., min_length=1, max_length=128)
+    paper_type: Literal["paper1", "paper2"] = "paper1"
+    question: str = Field(..., min_length=1, max_length=2_000)
+    student_answer: str = Field(..., min_length=1, max_length=8_000)
+
+
+class ExamCriterionResult(BaseModel):
+    criterion: str
+    label: str
+    score: int
+    max_score: int
+    feedback: str
+
+
+class SubmitAnswerResponse(BaseModel):
+    total_score: int
+    max_score: int
+    paper_type: str
+    criteria: list[ExamCriterionResult]
+    overall_comments: str
+    inference_seconds: float
+
+
+# --------------------------------------------------------------------------- #
+# Exam Mode — endpoints                                                        #
+# --------------------------------------------------------------------------- #
+
+def _require_chunks(record: Any) -> Path:
+    """Return the validated chunks Path, or raise HTTP 422/404."""
+    if not record.chunks_available or not record.chunks_path:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Document chunks are not available. Generate chunks first.",
+        )
+    chunks_path = Path(record.chunks_path)
+    if not chunks_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chunk file is missing on disk.",
+        )
+    return chunks_path
+
+
+@app.post("/api/exam/generate-question", response_model=GenerateQuestionResponse)
+async def exam_generate_question(payload: GenerateQuestionRequest) -> GenerateQuestionResponse:
+    record = get_document_or_404(payload.document_id)
+    chunks_path = _require_chunks(record)
+
+    try:
+        result: ExamQuestionResult = await run_in_threadpool(
+            generate_question, chunks_path, payload.paper_type
+        )
+    except LLMDisabledError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except LLMNotConfiguredError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except LLMServiceError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Question generation failed: {exc}",
+        ) from exc
+
+    return GenerateQuestionResponse(
+        question=result.question,
+        paper_type=result.paper_type,
+        inference_seconds=result.inference_seconds,
+    )
+
+
+@app.post("/api/exam/submit-answer", response_model=SubmitAnswerResponse)
+async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerResponse:
+    record = get_document_or_404(payload.document_id)
+    chunks_path = _require_chunks(record)
+
+    try:
+        result: GradingResult = await run_in_threadpool(
+            grade_answer,
+            chunks_path,
+            paper_type=payload.paper_type,
+            question=payload.question,
+            student_answer=payload.student_answer,
+        )
+    except LLMDisabledError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except LLMNotConfiguredError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except LLMServiceError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Grading failed: {exc}",
+        ) from exc
+
+    score_by_criterion = {c.criterion: c for c in result.criteria}
+    attempt = create_exam_attempt(
+        document_id=record.document_id,
+        paper_type=payload.paper_type,
+        question=payload.question,
+        student_answer=payload.student_answer,
+        chunks_path=record.chunks_path,
+        score_a=score_by_criterion.get("A") and score_by_criterion["A"].score,
+        score_b=score_by_criterion.get("B") and score_by_criterion["B"].score,
+        score_c=score_by_criterion.get("C") and score_by_criterion["C"].score,
+        score_d=score_by_criterion.get("D") and score_by_criterion["D"].score,
+        total_score=result.total_score,
+        max_score=result.max_score,
+        feedback_a=score_by_criterion.get("A") and score_by_criterion["A"].feedback,
+        feedback_b=score_by_criterion.get("B") and score_by_criterion["B"].feedback,
+        feedback_c=score_by_criterion.get("C") and score_by_criterion["C"].feedback,
+        feedback_d=score_by_criterion.get("D") and score_by_criterion["D"].feedback,
+        overall_comments=result.overall_comments,
+        grading_raw_output=result.raw_output,
+    )
+    try:
+        await run_in_threadpool(
+            append_exam_attempt,
+            record.document_id,
+            attempt,
+            EXAM_HISTORY_STORAGE_DIR,
+        )
+    except OSError as exc:
+        logger.warning("Failed to persist exam attempt for document_id=%s: %s", record.document_id, exc)
+
+    return SubmitAnswerResponse(
+        total_score=result.total_score,
+        max_score=result.max_score,
+        paper_type=result.paper_type,
+        criteria=[
+            ExamCriterionResult(
+                criterion=c.criterion,
+                label=c.label,
+                score=c.score,
+                max_score=c.max_score,
+                feedback=c.feedback,
+            )
+            for c in result.criteria
+        ],
+        overall_comments=result.overall_comments,
+        inference_seconds=result.inference_seconds,
     )

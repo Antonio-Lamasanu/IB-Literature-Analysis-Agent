@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import os
 import re
 import threading
@@ -170,6 +171,70 @@ class LLMService:
             reply=reply,
             final_prompt=prompt,
             prompt_build_seconds=prompt_build_seconds,
+            inference_seconds=inference_seconds,
+        )
+
+    def unload(self) -> None:
+        """Release the loaded model from memory."""
+        with self._load_lock:
+            self._llm = None
+        gc.collect()
+
+    def extract_title_and_author(self, text_sample: str) -> tuple[str, str]:
+        """Infer the title and author of a literary work from the first portion of its text.
+
+        Returns a (title, author) tuple. Falls back to ("Unknown", "Unknown") on any failure.
+        """
+        prompt = (
+            "Identify the title and author of this literary work.\n"
+            "Reply in exactly this format:\n"
+            "Title: <title>\n"
+            "Author: <author>\n\n"
+            "If you cannot determine the author, write Author: Unknown.\n"
+            f"Text:\n{text_sample.strip()}\n\n"
+            "Title:"
+        )
+        try:
+            llm = self._get_llm()
+            with self._inference_lock:
+                output = llm(
+                    prompt,
+                    max_tokens=48,
+                    temperature=0.0,
+                    stop=["\n\n"],
+                )
+            raw = output["choices"][0]["text"].strip()
+            # Prepend "Title:" since it was the stop token that opened the answer
+            full = "Title:" + raw
+            title_match = re.search(r"Title:\s*(.+)", full)
+            author_match = re.search(r"Author:\s*(.+)", full)
+            title = title_match.group(1).strip() if title_match else "Unknown"
+            author = author_match.group(1).strip() if author_match else "Unknown"
+            return (title or "Unknown", author or "Unknown")
+        except Exception:
+            return ("Unknown", "Unknown")
+
+    def generate_raw_reply(self, prompt: str) -> "LLMInferenceResult":
+        """Run inference on a pre-built prompt string with no context injection."""
+        llm = self._get_llm()
+        inference_started = time.perf_counter()
+        with self._inference_lock:
+            output = llm(
+                prompt,
+                max_tokens=self._config.max_tokens,
+                temperature=self._config.temperature,
+                top_p=0.9,
+                repeat_penalty=1.1,
+                stop=["\nUser:"],
+            )
+        inference_seconds = time.perf_counter() - inference_started
+        reply = output["choices"][0]["text"].strip()
+        if not reply:
+            raise LLMServiceError("Model returned an empty response.")
+        return LLMInferenceResult(
+            reply=reply,
+            final_prompt=prompt,
+            prompt_build_seconds=0.0,
             inference_seconds=inference_seconds,
         )
 

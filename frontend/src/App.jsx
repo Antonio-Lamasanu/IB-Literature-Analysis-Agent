@@ -62,6 +62,17 @@ export default function App() {
   const [chatError, setChatError] = useState("");
   const [chatDebug, setChatDebug] = useState(null);
 
+  // Exam mode state
+  const [activeMode, setActiveMode] = useState("learn");
+  const [examPaperType, setExamPaperType] = useState("paper1");
+  const [examQuestion, setExamQuestion] = useState("");
+  const [examQuestionStatus, setExamQuestionStatus] = useState("idle");
+  const [examQuestionError, setExamQuestionError] = useState("");
+  const [examAnswer, setExamAnswer] = useState("");
+  const [examGrading, setExamGrading] = useState(null);
+  const [examGradingStatus, setExamGradingStatus] = useState("idle");
+  const [examGradingError, setExamGradingError] = useState("");
+
   const startedAtRef = useRef(null);
   const intervalRef = useRef(null);
   const downloadUrlRef = useRef(null);
@@ -108,12 +119,25 @@ export default function App() {
     return "Ready";
   }, [status]);
 
+  const resetExam = () => {
+    setActiveMode("learn");
+    setExamPaperType("paper1");
+    setExamQuestion("");
+    setExamQuestionStatus("idle");
+    setExamQuestionError("");
+    setExamAnswer("");
+    setExamGrading(null);
+    setExamGradingStatus("idle");
+    setExamGradingError("");
+  };
+
   const resetResult = () => {
     if (downloadUrlRef.current) {
       URL.revokeObjectURL(downloadUrlRef.current);
       downloadUrlRef.current = null;
     }
     setResult(null);
+    resetExam();
   };
 
   const resetChat = () => {
@@ -325,6 +349,65 @@ export default function App() {
     } catch (err) {
       setChatStatus("error");
       setChatError(err?.message || "Unexpected error while chatting.");
+    }
+  };
+
+  const onGenerateQuestion = async () => {
+    if (!result?.documentId || !chatAvailable || !chunksAvailable) return;
+    setExamQuestionStatus("loading");
+    setExamQuestionError("");
+    setExamQuestion("");
+    setExamAnswer("");
+    setExamGrading(null);
+    setExamGradingStatus("idle");
+    setExamGradingError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/exam/generate-question`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document_id: result.documentId, paper_type: examPaperType }),
+      });
+      if (!response.ok) {
+        const detail = await parseErrorDetail(response, "Failed to generate question.");
+        throw new Error(detail);
+      }
+      const data = await response.json();
+      setExamQuestion(data.question || "");
+      setExamQuestionStatus("ready");
+    } catch (err) {
+      setExamQuestionStatus("error");
+      setExamQuestionError(err?.message || "Unexpected error.");
+    }
+  };
+
+  const onSubmitExamAnswer = async (event) => {
+    event.preventDefault();
+    if (!examQuestion || !examAnswer.trim()) return;
+    setExamGradingStatus("grading");
+    setExamGradingError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/exam/submit-answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          document_id: result.documentId,
+          paper_type: examPaperType,
+          question: examQuestion,
+          student_answer: examAnswer.trim(),
+        }),
+      });
+      if (!response.ok) {
+        const detail = await parseErrorDetail(response, "Grading failed.");
+        throw new Error(detail);
+      }
+      const data = await response.json();
+      setExamGrading(data);
+      setExamGradingStatus("done");
+    } catch (err) {
+      setExamGradingStatus("error");
+      setExamGradingError(err?.message || "Unexpected error during grading.");
     }
   };
 
@@ -683,6 +766,150 @@ export default function App() {
           .chat-form { flex-direction: column; align-items: stretch; }
           .chat-send { width: 100%; }
         }
+
+        .mode-toggle {
+          display: flex;
+          gap: 8px;
+          margin: 20px 0 0;
+        }
+
+        .mode-btn {
+          border: none;
+          border-radius: 10px;
+          padding: 10px 20px;
+          font-weight: 600;
+          cursor: pointer;
+          background: #e2e8f0;
+          color: var(--text);
+        }
+
+        .mode-btn.active {
+          background: var(--accent);
+          color: #fff;
+        }
+
+        .exam-panel {
+          margin-top: 24px;
+          padding: 20px;
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          background: #fff;
+        }
+
+        .exam-title {
+          margin: 0 0 6px;
+          font-size: 1.1rem;
+        }
+
+        .exam-note {
+          margin: 0 0 14px;
+          color: var(--muted);
+          font-size: 0.95rem;
+        }
+
+        .exam-question-box {
+          background: #fffbe6;
+          border: 1px solid #f59e0b;
+          border-radius: 10px;
+          padding: 14px 16px;
+          margin: 12px 0;
+          font-size: 1.05rem;
+          line-height: 1.5;
+        }
+
+        .exam-answer-area {
+          width: 100%;
+          min-height: 200px;
+          resize: vertical;
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 10px;
+          font: inherit;
+          margin: 10px 0;
+        }
+
+        .exam-results {
+          margin-top: 20px;
+          padding: 16px;
+          border-radius: 12px;
+          border: 2px solid var(--accent);
+          background: #f0fdf9;
+        }
+
+        .exam-score-heading {
+          font-size: 1.4rem;
+          margin: 0 0 14px;
+          color: var(--accent);
+        }
+
+        .criterion-row {
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 12px 14px;
+          margin-bottom: 10px;
+          background: #fff;
+        }
+
+        .criterion-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 6px;
+        }
+
+        .criterion-label {
+          font-weight: 600;
+        }
+
+        .criterion-score-badge {
+          background: var(--accent);
+          color: #fff;
+          border-radius: 20px;
+          padding: 3px 12px;
+          font-weight: 700;
+          font-size: 0.95rem;
+          white-space: nowrap;
+        }
+
+        .criterion-feedback {
+          margin: 0;
+          color: #374151;
+          line-height: 1.45;
+        }
+
+        .exam-overall {
+          margin-top: 14px;
+          padding: 12px 14px;
+          border-radius: 10px;
+          border: 1px solid var(--border);
+          background: #f8f9ff;
+        }
+
+        .exam-overall-title {
+          margin: 0 0 6px;
+          font-size: 0.98rem;
+          font-weight: 600;
+        }
+
+        .exam-overall-text {
+          margin: 0;
+          color: #374151;
+          line-height: 1.45;
+        }
+
+        .paper-select {
+          padding: 8px 12px;
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          font: inherit;
+          background: #fff;
+          margin-bottom: 14px;
+        }
+
+        .paper-select:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
       `}</style>
 
       <main className="app">
@@ -757,6 +984,26 @@ export default function App() {
             </div>
           ) : null}
 
+          {hasChatDocument && chatAvailable && chunksAvailable ? (
+            <div className="mode-toggle">
+              <button
+                className={`mode-btn${activeMode === "learn" ? " active" : ""}`}
+                type="button"
+                onClick={() => setActiveMode("learn")}
+              >
+                Learn Mode
+              </button>
+              <button
+                className={`mode-btn${activeMode === "exam" ? " active" : ""}`}
+                type="button"
+                onClick={() => setActiveMode("exam")}
+              >
+                Exam Mode
+              </button>
+            </div>
+          ) : null}
+
+          {activeMode === "learn" ? (
           <div className="chat-layout">
             <section className="chat">
               <h2 className="chat-title">Document Chat</h2>
@@ -859,6 +1106,125 @@ export default function App() {
               ) : null}
             </aside>
           </div>
+          ) : null}
+
+          {activeMode === "exam" && hasChatDocument && chatAvailable && chunksAvailable ? (
+            <section className="exam-panel">
+              <h2 className="exam-title">IB Literature Exam</h2>
+
+              {/* Paper selector */}
+              <div>
+                <label htmlFor="paper-select" style={{ fontWeight: 600, marginRight: 8 }}>Paper:</label>
+                <select
+                  id="paper-select"
+                  className="paper-select"
+                  value={examPaperType}
+                  onChange={(e) => setExamPaperType(e.target.value)}
+                  disabled={examQuestionStatus !== "idle"}
+                >
+                  <option value="paper1">Paper 1 — Guided Literary Analysis (max 20)</option>
+                  <option value="paper2">Paper 2 — Comparative Essay (max 40)</option>
+                </select>
+              </div>
+
+              {/* Question generation */}
+              <button
+                className="btn"
+                type="button"
+                onClick={onGenerateQuestion}
+                disabled={examQuestionStatus === "loading" || isBusy}
+              >
+                {examQuestionStatus === "loading" ? "Generating question..." : "Generate Question"}
+              </button>
+
+              {examQuestionStatus === "error" ? (
+                <p className="chat-error">{examQuestionError}</p>
+              ) : null}
+
+              {examQuestionStatus === "ready" || examQuestionStatus === "loading" ? (
+                examQuestion ? (
+                  <div className="exam-question-box">{examQuestion}</div>
+                ) : null
+              ) : null}
+
+              {/* Answer area — shown once question is ready and not yet graded */}
+              {examQuestionStatus === "ready" && examGradingStatus !== "done" ? (
+                <form onSubmit={onSubmitExamAnswer}>
+                  <p className="exam-note" style={{ marginTop: 14 }}>
+                    Write your response below. No AI assistance is available during this step.
+                  </p>
+                  <textarea
+                    className="exam-answer-area"
+                    placeholder="Write your answer here..."
+                    value={examAnswer}
+                    onChange={(e) => setExamAnswer(e.target.value)}
+                    disabled={examGradingStatus === "grading"}
+                  />
+                  <button
+                    className="btn"
+                    type="submit"
+                    disabled={!examAnswer.trim() || examGradingStatus === "grading"}
+                  >
+                    {examGradingStatus === "grading" ? "Grading your response..." : "Submit for Grading"}
+                  </button>
+                  {examGradingStatus === "error" ? (
+                    <p className="chat-error">{examGradingError}</p>
+                  ) : null}
+                </form>
+              ) : null}
+
+              {/* Results */}
+              {examGradingStatus === "done" && examGrading ? (
+                <div className="exam-results">
+                  <h3 className="exam-score-heading">
+                    Total: {examGrading.total_score} / {examGrading.max_score}
+                  </h3>
+
+                  {(examGrading.criteria || []).map((c) => (
+                    <div key={c.criterion} className="criterion-row">
+                      <div className="criterion-header">
+                        <span className="criterion-label">
+                          {c.criterion} — {c.label}
+                        </span>
+                        <span className="criterion-score-badge">
+                          {c.score} / {c.max_score}
+                        </span>
+                      </div>
+                      <p className="criterion-feedback">{c.feedback}</p>
+                    </div>
+                  ))}
+
+                  {examGrading.overall_comments ? (
+                    <div className="exam-overall">
+                      <p className="exam-overall-title">Overall Comments</p>
+                      <p className="exam-overall-text">{examGrading.overall_comments}</p>
+                    </div>
+                  ) : null}
+
+                  <div style={{ marginTop: 14 }}>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => {
+                        // Reset only question/answer/grading state, keep paper type
+                        setExamQuestion("");
+                        setExamQuestionStatus("idle");
+                        setExamQuestionError("");
+                        setExamAnswer("");
+                        setExamGrading(null);
+                        setExamGradingStatus("idle");
+                        setExamGradingError("");
+                        setTimeout(onGenerateQuestion, 0);
+                      }}
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
         </section>
       </main>
     </>

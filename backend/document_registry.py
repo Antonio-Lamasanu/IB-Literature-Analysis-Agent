@@ -22,6 +22,8 @@ class DocumentRecord:
     chunk_meta_path: str | None = None
     chunks_count: int | None = None
     chunk_schema_version: str | None = None
+    title: str | None = None
+    author: str | None = None
 
     @classmethod
     def from_dict(cls, payload: dict) -> "DocumentRecord" | None:
@@ -58,6 +60,16 @@ class DocumentRecord:
                 chunk_schema_version=(
                     str(payload["chunk_schema_version"])
                     if payload.get("chunk_schema_version") is not None
+                    else None
+                ),
+                title=(
+                    str(payload["title"])
+                    if payload.get("title") is not None
+                    else None
+                ),
+                author=(
+                    str(payload["author"])
+                    if payload.get("author") is not None
                     else None
                 ),
             )
@@ -125,6 +137,22 @@ class DocumentRegistry:
             record.chunk_meta_path = str(Path(chunk_meta_path).resolve()) if chunk_meta_path else None
             record.chunks_count = int(chunks_count) if chunks_count is not None else None
             record.chunk_schema_version = chunk_schema_version
+            self._persist_unlocked()
+            return record
+
+    def update_title_author(
+        self,
+        document_id: str,
+        *,
+        title: str | None,
+        author: str | None,
+    ) -> DocumentRecord | None:
+        with self._lock:
+            record = self._records.get(document_id)
+            if record is None:
+                return None
+            record.title = title
+            record.author = author
             self._persist_unlocked()
             return record
 
