@@ -18,14 +18,14 @@ from retrieval import format_excerpt_context, retrieve_relevant_excerpts
 # Constants                                                                    #
 # --------------------------------------------------------------------------- #
 
-EXAM_CONTEXT_MAX_EXCERPTS = 5
-EXAM_CONTEXT_TOKEN_BUDGET = 900
-EXAM_RETRIEVE_CANDIDATES = 12
+_GRADING_MAX_EXCERPTS = 3
+_GRADING_TOKEN_BUDGET = 450
+_GRADING_RETRIEVE_CANDIDATES = 12
 
-# BM25 query strings differ by paper type to surface the most useful excerpts.
-QUESTION_GEN_QUERY: dict[str, str] = {
-    "paper1": "passage language tone imagery literary techniques close reading",
-    "paper2": "themes motifs narrative voice symbolism comparative analysis",
+# BM25 query strings used when retrieving context for grading
+GRADING_QUERY: dict[str, str] = {
+    "paper1": "language tone imagery literary techniques psychological state",
+    "paper2": "themes motifs narrative voice symbolism setting memory appearance",
 }
 
 # Per-paper criteria: (letter, label, max_score)
@@ -66,23 +66,6 @@ _CRITERIA_DESCRIPTIONS: dict[str, dict[str, str]] = {
     },
 }
 
-_QUESTION_GEN_USER_MSG: dict[str, str] = {
-    "paper1": (
-        "Based on the passage excerpts in the document context above, write ONE IB Literature\n"
-        "Paper 1 exam question. The question must ask the student to write a close analysis of\n"
-        "the passage as a whole: its themes, tone, language, and literary techniques.\n"
-        "Output a single line beginning with \"Question:\" followed by the question text only.\n"
-        "Question:"
-    ),
-    "paper2": (
-        "Based on the work represented in the document context above, write ONE IB Literature\n"
-        "Paper 2 essay question. The question must ask the student to explore a theme, motif,\n"
-        "or literary technique across the work as a whole using textual evidence.\n"
-        "Output a single line beginning with \"Question:\" followed by the question text only.\n"
-        "Question:"
-    ),
-}
-
 _SCORE_RE = re.compile(r"Score:\s*(\d+)/\d+")
 _FEEDBACK_RE = re.compile(r"Feedback:\s*(.+?)(?=\n\[|\nScore:|\Z)", re.DOTALL)
 _OVERALL_RE = re.compile(r"\[Overall\].*?Comments:\s*(.+?)(?=\n\[|\Z)", re.DOTALL)
@@ -95,13 +78,6 @@ _CRITERION_BLOCK_RE = re.compile(
 # --------------------------------------------------------------------------- #
 # Dataclasses                                                                  #
 # --------------------------------------------------------------------------- #
-
-@dataclass(frozen=True)
-class ExamQuestionResult:
-    question: str
-    paper_type: str
-    inference_seconds: float
-
 
 @dataclass(frozen=True)
 class CriterionScore:
@@ -119,8 +95,10 @@ class GradingResult:
     total_score: int
     max_score: int    # 20 for paper1, 40 for paper2
     paper_type: str
+    context_mode: str  # "chunks" | "titles_only"
     raw_output: str
     inference_seconds: float
+    prompt: str
 
 
 # --------------------------------------------------------------------------- #
@@ -132,19 +110,29 @@ def _validate_paper_type(paper_type: str) -> None:
         raise ValueError(f"Invalid paper_type {paper_type!r}. Must be 'paper1' or 'paper2'.")
 
 
-def retrieve_exam_context(chunks_path: str | Path, paper_type: str) -> str:
-    """Retrieve and format BM25 excerpts appropriate for the given paper type."""
+def retrieve_multi_doc_context(chunks_paths: list[str | Path], paper_type: str) -> str:
+    """Retrieve and format BM25 excerpts from one or two documents.
+
+    Each document's excerpts are labelled with a '--- Work N ---' header so the
+    grading prompt clearly distinguishes the two works.
+    """
     _validate_paper_type(paper_type)
-    query = QUESTION_GEN_QUERY[paper_type]
-    excerpts, _mode = retrieve_relevant_excerpts(
-        "",  # document_text unused when persisted_chunks_path is provided
-        query,
-        persisted_chunks_path=Path(chunks_path),
-        max_excerpts=EXAM_CONTEXT_MAX_EXCERPTS,
-        context_token_budget=EXAM_CONTEXT_TOKEN_BUDGET,
-        retrieve_candidates=EXAM_RETRIEVE_CANDIDATES,
-    )
-    return format_excerpt_context(excerpts)
+    query = GRADING_QUERY[paper_type]
+    parts: list[str] = []
+
+    for idx, chunks_path in enumerate(chunks_paths, start=1):
+        excerpts, _mode = retrieve_relevant_excerpts(
+            "",  # document_text unused when persisted_chunks_path is given
+            query,
+            persisted_chunks_path=Path(chunks_path),
+            max_excerpts=_GRADING_MAX_EXCERPTS,
+            context_token_budget=_GRADING_TOKEN_BUDGET,
+            retrieve_candidates=_GRADING_RETRIEVE_CANDIDATES,
+        )
+        label = f"--- Work {idx} ---"
+        parts.append(f"{label}\n{format_excerpt_context(excerpts)}")
+
+    return "\n\n".join(parts)
 
 
 def _build_grading_user_msg(question: str, student_answer: str, paper_type: str) -> str:
@@ -163,9 +151,6 @@ def _build_grading_user_msg(question: str, student_answer: str, paper_type: str)
         for letter, _label, max_score in criteria
     )
 
-    first_letter = criteria[0][0]
-    first_max = criteria[0][2]
-
     return (
         f"You are an IB Literature examiner. Grade the student's response strictly using the\n"
         f"four criteria below. Output each block in this exact format:\n\n"
@@ -175,14 +160,17 @@ def _build_grading_user_msg(question: str, student_answer: str, paper_type: str)
         f"IB CRITERIA ({paper_label}):\n"
         f"{criteria_lines}\n\n"
         f"EXAM QUESTION:\n{question}\n\n"
-        f"STUDENT ANSWER:\n{student_answer}\n\n"
-        f"[Criterion {first_letter}]\n"
-        f"Score: N/{first_max}\n"
-        f"Feedback:"
+        f"STUDENT ANSWER:\n{student_answer}"
     )
 
 
-def _parse_grading_output(raw: str, paper_type: str, inference_seconds: float) -> GradingResult:
+def _parse_grading_output(
+    raw: str,
+    paper_type: str,
+    context_mode: str,
+    inference_seconds: float,
+    prompt: str,
+) -> GradingResult:
     criteria_defs = CRITERIA_BY_PAPER[paper_type]
     criterion_map: dict[str, tuple[str, int]] = {
         letter: (label, max_score) for letter, label, max_score in criteria_defs
@@ -244,8 +232,10 @@ def _parse_grading_output(raw: str, paper_type: str, inference_seconds: float) -
         total_score=total_score,
         max_score=MAX_SCORE_BY_PAPER[paper_type],
         paper_type=paper_type,
+        context_mode=context_mode,
         raw_output=raw,
         inference_seconds=inference_seconds,
+        prompt=prompt,
     )
 
 
@@ -253,42 +243,32 @@ def _parse_grading_output(raw: str, paper_type: str, inference_seconds: float) -
 # Public API                                                                   #
 # --------------------------------------------------------------------------- #
 
-def generate_question(chunks_path: str | Path, paper_type: str) -> ExamQuestionResult:
-    """Generate an IB exam question from the document's BM25 excerpts."""
-    _validate_paper_type(paper_type)
-    context_text = retrieve_exam_context(chunks_path, paper_type)
-    user_msg = _QUESTION_GEN_USER_MSG[paper_type]
-
-    t0 = time.perf_counter()
-    result = get_llm_service().generate_reply_with_debug(
-        document_text=context_text,
-        messages=[{"role": "user", "content": user_msg}],
-        max_history_messages=0,
-    )
-    inference_seconds = time.perf_counter() - t0
-
-    # Strip any "Question:" primer the model may have echoed
-    question = result.reply.strip()
-    if question.lower().startswith("question:"):
-        question = question[len("question:"):].strip()
-
-    return ExamQuestionResult(
-        question=question,
-        paper_type=paper_type,
-        inference_seconds=inference_seconds,
-    )
-
-
 def grade_answer(
-    chunks_path: str | Path,
     *,
     paper_type: str,
     question: str,
     student_answer: str,
+    passage_text: str | None = None,
+    chunks_paths: list[str | Path] | None = None,
+    context_mode: str = "chunks",
+    doc_titles: list[str] | None = None,
 ) -> GradingResult:
-    """Grade a student answer against IB criteria for the given paper type."""
+    """Grade a student answer against IB criteria for the given paper type.
+
+    Paper 1: pass ``passage_text`` — the hardcoded unseen passage is used directly.
+    Paper 2, chunks mode: pass ``chunks_paths`` — BM25 retrieval from each work.
+    Paper 2, titles_only mode: pass ``doc_titles`` — only work titles/authors as context.
+    """
     _validate_paper_type(paper_type)
-    context_text = retrieve_exam_context(chunks_path, paper_type)
+
+    if paper_type == "paper1":
+        context_text = passage_text or ""
+    elif context_mode == "titles_only":
+        lines = [f"Work {i + 1}: {t}" for i, t in enumerate(doc_titles or [])]
+        context_text = "\n".join(lines) if lines else "(no work information provided)"
+    else:
+        context_text = retrieve_multi_doc_context(chunks_paths or [], paper_type)
+
     grading_msg = _build_grading_user_msg(question, student_answer, paper_type)
 
     t0 = time.perf_counter()
@@ -299,4 +279,4 @@ def grade_answer(
     )
     inference_seconds = time.perf_counter() - t0
 
-    return _parse_grading_output(result.reply, paper_type, inference_seconds)
+    return _parse_grading_output(result.reply, paper_type, context_mode, inference_seconds, grading_msg)

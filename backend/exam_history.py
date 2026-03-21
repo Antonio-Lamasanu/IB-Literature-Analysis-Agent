@@ -42,6 +42,8 @@ class ExamAttempt:
     overall_comments: str | None = None
     grading_raw_output: str | None = None
     chunks_path: str | None = None
+    document_ids: list[str] = field(default_factory=list)
+    context_mode: str = "chunks"
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ExamAttempt | None":
@@ -91,6 +93,8 @@ class ExamAttempt:
             overall_comments=_opt_str(payload.get("overall_comments")),
             grading_raw_output=_opt_str(payload.get("grading_raw_output")),
             chunks_path=_opt_str(payload.get("chunks_path")),
+            document_ids=[str(d) for d in payload.get("document_ids") or []],
+            context_mode=str(payload.get("context_mode") or "chunks"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -158,6 +162,8 @@ def create_exam_attempt(
     feedback_d: str | None = None,
     overall_comments: str | None = None,
     grading_raw_output: str | None = None,
+    document_ids: list[str] | None = None,
+    context_mode: str = "chunks",
 ) -> ExamAttempt:
     return ExamAttempt(
         attempt_id=str(uuid.uuid4()),
@@ -179,6 +185,8 @@ def create_exam_attempt(
         overall_comments=overall_comments,
         grading_raw_output=grading_raw_output,
         chunks_path=chunks_path,
+        document_ids=list(document_ids or []),
+        context_mode=context_mode,
     )
 
 

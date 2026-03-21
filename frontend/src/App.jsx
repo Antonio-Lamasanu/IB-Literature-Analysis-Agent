@@ -65,13 +65,25 @@ export default function App() {
   // Exam mode state
   const [activeMode, setActiveMode] = useState("learn");
   const [examPaperType, setExamPaperType] = useState("paper1");
-  const [examQuestion, setExamQuestion] = useState("");
-  const [examQuestionStatus, setExamQuestionStatus] = useState("idle");
-  const [examQuestionError, setExamQuestionError] = useState("");
+  const [examStep, setExamStep] = useState("setup");       // setup|writing|done
+  const [examPassage, setExamPassage] = useState("");
+  const [examQuestionText, setExamQuestionText] = useState("");
+  const [examAllDocs, setExamAllDocs] = useState([]);
+  const [examDocsStatus, setExamDocsStatus] = useState("idle"); // idle|loading|ready|error
+  const [examDocsError, setExamDocsError] = useState("");
+  const [examSelectedDocIds, setExamSelectedDocIds] = useState([]);
   const [examAnswer, setExamAnswer] = useState("");
+  const [examP2Questions, setExamP2Questions] = useState([]);       // [{id, text}]
+  const [examContextMode, setExamContextMode] = useState("chunks"); // chunks|titles_only
   const [examGrading, setExamGrading] = useState(null);
-  const [examGradingStatus, setExamGradingStatus] = useState("idle");
+  const [examGradingStatus, setExamGradingStatus] = useState("idle"); // idle|grading|done|error
   const [examGradingError, setExamGradingError] = useState("");
+  const [examDebug, setExamDebug] = useState(null);
+
+  // Pre-loaded docs and LLM status (fetched on mount)
+  const [availableDocs, setAvailableDocs] = useState([]);
+  const [llmAvailable, setLlmAvailable] = useState(false);
+  const [selectedLearnDocId, setSelectedLearnDocId] = useState(null);
 
   const startedAtRef = useRef(null);
   const intervalRef = useRef(null);
@@ -81,8 +93,10 @@ export default function App() {
   const isProcessing = status === "processing";
   const isChunking = status === "chunking";
   const isChatSending = chatStatus === "sending";
-  const hasChatDocument = Boolean(result?.documentId);
-  const chatAvailable = Boolean(result?.chatAvailable);
+  const activeChatDocId = result?.documentId || selectedLearnDocId;
+  const hasChatDocument = Boolean(activeChatDocId);
+  const modesAvailable = availableDocs.length > 0 || Boolean(result?.documentId);
+  const chatAvailable = llmAvailable && Boolean(activeChatDocId);
   const chunksAvailable = Boolean(result?.chunksAvailable);
 
   useEffect(() => {
@@ -111,6 +125,16 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    Promise.all([
+      fetch(`${API_BASE_URL}/api/documents`).then((r) => r.ok ? r.json() : []),
+      fetch(`${API_BASE_URL}/api/status`).then((r) => r.ok ? r.json() : {}),
+    ]).then(([docs, statusData]) => {
+      setAvailableDocs((docs || []).filter((d) => d.chunks_available));
+      setLlmAvailable(Boolean(statusData?.chat_available));
+    }).catch(() => {});
+  }, []);
+
   const statusText = useMemo(() => {
     if (status === "processing") return "Processing PDF and generating chunks...";
     if (status === "chunking") return "Regenerating chunks...";
@@ -122,13 +146,20 @@ export default function App() {
   const resetExam = () => {
     setActiveMode("learn");
     setExamPaperType("paper1");
-    setExamQuestion("");
-    setExamQuestionStatus("idle");
-    setExamQuestionError("");
+    setExamStep("setup");
+    setExamPassage("");
+    setExamQuestionText("");
+    setExamAllDocs([]);
+    setExamDocsStatus("idle");
+    setExamDocsError("");
+    setExamSelectedDocIds([]);
+    setExamP2Questions([]);
     setExamAnswer("");
+    setExamContextMode("chunks");
     setExamGrading(null);
     setExamGradingStatus("idle");
     setExamGradingError("");
+    setExamDebug(null);
   };
 
   const resetResult = () => {
@@ -137,6 +168,7 @@ export default function App() {
       downloadUrlRef.current = null;
     }
     setResult(null);
+    setSelectedLearnDocId(null);
     resetExam();
   };
 
@@ -221,6 +253,12 @@ export default function App() {
         documentFilename,
         chatAvailable: chatAvailableHeader === "1",
       });
+      if (chatAvailableHeader === "1") setLlmAvailable(true);
+      // Refresh available docs so newly uploaded doc appears in learn-mode picker
+      fetch(`${API_BASE_URL}/api/documents`)
+        .then((r) => r.ok ? r.json() : [])
+        .then((docs) => setAvailableDocs((docs || []).filter((d) => d.chunks_available)))
+        .catch(() => {});
       setStatus("success");
     } catch (err) {
       setStatus("error");
@@ -320,7 +358,7 @@ export default function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          document_id: result.documentId,
+          document_id: activeChatDocId,
           messages: nextMessages,
         }),
       });
@@ -352,51 +390,82 @@ export default function App() {
     }
   };
 
-  const onGenerateQuestion = async () => {
-    if (!result?.documentId || !chatAvailable || !chunksAvailable) return;
-    setExamQuestionStatus("loading");
-    setExamQuestionError("");
-    setExamQuestion("");
+  const onEnterExam = async (paperType) => {
     setExamAnswer("");
     setExamGrading(null);
     setExamGradingStatus("idle");
     setExamGradingError("");
 
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/exam/generate-question`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document_id: result.documentId, paper_type: examPaperType }),
-      });
-      if (!response.ok) {
-        const detail = await parseErrorDetail(response, "Failed to generate question.");
-        throw new Error(detail);
+    if (paperType === "paper1") {
+      setExamDocsStatus("loading");
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/exam/paper1`);
+        if (!res.ok) throw new Error(await parseErrorDetail(res, "Failed to load Paper 1."));
+        const data = await res.json();
+        setExamPassage(data.passage || "");
+        setExamQuestionText(data.question || "");
+        setExamStep("writing");
+        setExamDocsStatus("ready");
+      } catch (err) {
+        setExamDocsStatus("error");
+        setExamDocsError(err?.message || "Failed to load Paper 1.");
       }
-      const data = await response.json();
-      setExamQuestion(data.question || "");
-      setExamQuestionStatus("ready");
-    } catch (err) {
-      setExamQuestionStatus("error");
-      setExamQuestionError(err?.message || "Unexpected error.");
+    } else {
+      setExamDocsStatus("loading");
+      setExamSelectedDocIds([]);
+      setExamStep("setup");
+      try {
+        const [docsRes, qRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/documents`),
+          fetch(`${API_BASE_URL}/api/exam/paper2/questions`),
+        ]);
+        if (!docsRes.ok) throw new Error(await parseErrorDetail(docsRes, "Failed to load documents."));
+        if (!qRes.ok) throw new Error(await parseErrorDetail(qRes, "Failed to load questions."));
+        const docsData = await docsRes.json();
+        const qData = await qRes.json();
+        setExamAllDocs((docsData || []).filter((d) => d.chunks_available));
+        setExamP2Questions(qData.questions || []);
+        setExamDocsStatus("ready");
+      } catch (err) {
+        setExamDocsStatus("error");
+        setExamDocsError(err?.message || "Failed to load data.");
+      }
     }
+  };
+
+  const onToggleDocSelection = (docId) => {
+    setExamSelectedDocIds((prev) => {
+      if (prev.includes(docId)) return prev.filter((id) => id !== docId);
+      if (prev.length >= 2) return prev;
+      return [...prev, docId];
+    });
+  };
+
+  const onConfirmDocSelection = () => {
+    if (examSelectedDocIds.length !== 2 || examP2Questions.length === 0) return;
+    const picked = examP2Questions[Math.floor(Math.random() * examP2Questions.length)];
+    setExamQuestionText(picked.text || "");
+    setExamStep("writing");
   };
 
   const onSubmitExamAnswer = async (event) => {
     event.preventDefault();
-    if (!examQuestion || !examAnswer.trim()) return;
+    if (!examQuestionText || !examAnswer.trim()) return;
     setExamGradingStatus("grading");
     setExamGradingError("");
 
     try {
+      const body = {
+        paper_type: examPaperType,
+        question: examQuestionText,
+        student_answer: examAnswer.trim(),
+        document_ids: examPaperType === "paper2" ? examSelectedDocIds : [],
+        context_mode: examPaperType === "paper2" ? examContextMode : "chunks",
+      };
       const response = await fetch(`${API_BASE_URL}/api/exam/submit-answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          document_id: result.documentId,
-          paper_type: examPaperType,
-          question: examQuestion,
-          student_answer: examAnswer.trim(),
-        }),
+        body: JSON.stringify(body),
       });
       if (!response.ok) {
         const detail = await parseErrorDetail(response, "Grading failed.");
@@ -404,7 +473,9 @@ export default function App() {
       }
       const data = await response.json();
       setExamGrading(data);
+      setExamDebug(data.debug || null);
       setExamGradingStatus("done");
+      setExamStep("done");
     } catch (err) {
       setExamGradingStatus("error");
       setExamGradingError(err?.message || "Unexpected error during grading.");
@@ -910,6 +981,48 @@ export default function App() {
           opacity: 0.6;
           cursor: not-allowed;
         }
+
+        .doc-picker-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          gap: 10px;
+          margin: 12px 0;
+        }
+
+        .doc-card {
+          border: 2px solid var(--border);
+          border-radius: 10px;
+          padding: 12px;
+          cursor: pointer;
+          background: #fff;
+          transition: border-color 0.15s;
+        }
+
+        .doc-card:hover:not(.disabled) {
+          border-color: var(--accent);
+        }
+
+        .doc-card.selected {
+          border-color: var(--accent);
+          background: #f0fdf9;
+        }
+
+        .doc-card.disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+
+        .doc-card-name {
+          font-weight: 600;
+          font-size: 0.95rem;
+          margin: 0 0 4px;
+        }
+
+        .doc-card-meta {
+          color: var(--muted);
+          font-size: 0.82rem;
+          margin: 0;
+        }
       `}</style>
 
       <main className="app">
@@ -984,7 +1097,7 @@ export default function App() {
             </div>
           ) : null}
 
-          {hasChatDocument && chatAvailable && chunksAvailable ? (
+          {modesAvailable ? (
             <div className="mode-toggle">
               <button
                 className={`mode-btn${activeMode === "learn" ? " active" : ""}`}
@@ -1007,9 +1120,38 @@ export default function App() {
           <div className="chat-layout">
             <section className="chat">
               <h2 className="chat-title">Document Chat</h2>
-              {!hasChatDocument ? (
-                <p className="chat-note">Process a PDF first to enable chat.</p>
+
+              {/* No freshly-uploaded doc: show picker from registry */}
+              {!result?.documentId ? (
+                <div style={{ marginBottom: 16 }}>
+                  <p className="chat-note" style={{ marginBottom: 10 }}>
+                    Select a work to chat about:
+                  </p>
+                  {availableDocs.length === 0 ? (
+                    <p className="chat-note">No works found. Upload a PDF above to get started.</p>
+                  ) : (
+                    <div className="doc-picker-grid">
+                      {availableDocs.map((doc) => (
+                        <div
+                          key={doc.document_id}
+                          className={`doc-card${selectedLearnDocId === doc.document_id ? " selected" : ""}`}
+                          onClick={() => {
+                            setSelectedLearnDocId(doc.document_id);
+                            setChatMessages([]);
+                            setChatDebug(null);
+                          }}
+                        >
+                          <p className="doc-card-name">{doc.title || doc.filename}</p>
+                          <p className="doc-card-meta">
+                            {doc.author ? `${doc.author} · ` : ""}{doc.chunks_count} chunks
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ) : null}
+
               {hasChatDocument && !chatAvailable ? (
                 <p className="chat-note">Chat is unavailable. Configure backend LLM env vars and a valid model path.</p>
               ) : null}
@@ -1055,7 +1197,7 @@ export default function App() {
             <aside className="debug-panel">
               <h2 className="debug-title">Chat Debug</h2>
               {!hasChatDocument ? (
-                <p className="debug-note">Process a PDF first to inspect prompts and retrieval.</p>
+                <p className="debug-note">Select or upload a work first to inspect prompts and retrieval.</p>
               ) : null}
               {hasChatDocument && !chatAvailable ? (
                 <p className="debug-note">Chat debug becomes available once backend chat is configured.</p>
@@ -1108,87 +1250,182 @@ export default function App() {
           </div>
           ) : null}
 
-          {activeMode === "exam" && hasChatDocument && chatAvailable && chunksAvailable ? (
+          {activeMode === "exam" && modesAvailable ? (
             <section className="exam-panel">
               <h2 className="exam-title">IB Literature Exam</h2>
 
-              {/* Paper selector */}
-              <div>
-                <label htmlFor="paper-select" style={{ fontWeight: 600, marginRight: 8 }}>Paper:</label>
-                <select
-                  id="paper-select"
-                  className="paper-select"
-                  value={examPaperType}
-                  onChange={(e) => setExamPaperType(e.target.value)}
-                  disabled={examQuestionStatus !== "idle"}
-                >
-                  <option value="paper1">Paper 1 — Guided Literary Analysis (max 20)</option>
-                  <option value="paper2">Paper 2 — Comparative Essay (max 40)</option>
-                </select>
-              </div>
-
-              {/* Question generation */}
-              <button
-                className="btn"
-                type="button"
-                onClick={onGenerateQuestion}
-                disabled={examQuestionStatus === "loading" || isBusy}
-              >
-                {examQuestionStatus === "loading" ? "Generating question..." : "Generate Question"}
-              </button>
-
-              {examQuestionStatus === "error" ? (
-                <p className="chat-error">{examQuestionError}</p>
+              {/* ── Step: initial paper selection + start ── */}
+              {examStep === "setup" && examDocsStatus === "idle" ? (
+                <div>
+                  <div style={{ marginBottom: 14 }}>
+                    <label htmlFor="paper-select" style={{ fontWeight: 600, marginRight: 8 }}>Paper:</label>
+                    <select
+                      id="paper-select"
+                      className="paper-select"
+                      value={examPaperType}
+                      onChange={(e) => setExamPaperType(e.target.value)}
+                    >
+                      <option value="paper1">Paper 1 — Guided Literary Analysis (max 20)</option>
+                      <option value="paper2">Paper 2 — Comparative Essay (max 40)</option>
+                    </select>
+                  </div>
+                  <button className="btn" type="button" onClick={() => onEnterExam(examPaperType)}>
+                    Start Exam
+                  </button>
+                </div>
               ) : null}
 
-              {examQuestionStatus === "ready" || examQuestionStatus === "loading" ? (
-                examQuestion ? (
-                  <div className="exam-question-box">{examQuestion}</div>
-                ) : null
+              {/* Loading state */}
+              {examDocsStatus === "loading" ? (
+                <p className="exam-note">Loading exam data…</p>
               ) : null}
 
-              {/* Answer area — shown once question is ready and not yet graded */}
-              {examQuestionStatus === "ready" && examGradingStatus !== "done" ? (
-                <form onSubmit={onSubmitExamAnswer}>
-                  <p className="exam-note" style={{ marginTop: 14 }}>
-                    Write your response below. No AI assistance is available during this step.
-                  </p>
-                  <textarea
-                    className="exam-answer-area"
-                    placeholder="Write your answer here..."
-                    value={examAnswer}
-                    onChange={(e) => setExamAnswer(e.target.value)}
-                    disabled={examGradingStatus === "grading"}
-                  />
+              {/* Error state */}
+              {examDocsStatus === "error" ? (
+                <p className="chat-error">{examDocsError}</p>
+              ) : null}
+
+              {/* ── Step: document picker (Paper 2 only) ── */}
+              {examStep === "setup" && examDocsStatus === "ready" && examPaperType === "paper2" ? (
+                <div>
+                  <h3 style={{ margin: "0 0 8px", fontSize: "1rem" }}>Select Two Works</h3>
+                  <p className="exam-note">Choose exactly 2 works to compare in your essay.</p>
+                  {examAllDocs.length === 0 ? (
+                    <p className="exam-note">No documents with chunks available. Upload and process PDFs first.</p>
+                  ) : (
+                    <div className="doc-picker-grid">
+                      {examAllDocs.map((doc) => {
+                        const isSelected = examSelectedDocIds.includes(doc.document_id);
+                        const isDisabled = !isSelected && examSelectedDocIds.length >= 2;
+                        return (
+                          <div
+                            key={doc.document_id}
+                            className={`doc-card${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`}
+                            onClick={() => !isDisabled && onToggleDocSelection(doc.document_id)}
+                          >
+                            <p className="doc-card-name">{doc.title || doc.filename}</p>
+                            <p className="doc-card-meta">
+                              {doc.author ? `${doc.author} · ` : ""}{doc.chunks_count} chunks
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   <button
                     className="btn"
-                    type="submit"
-                    disabled={!examAnswer.trim() || examGradingStatus === "grading"}
+                    type="button"
+                    onClick={onConfirmDocSelection}
+                    disabled={examSelectedDocIds.length !== 2}
+                    style={{ marginTop: 12 }}
                   >
-                    {examGradingStatus === "grading" ? "Grading your response..." : "Submit for Grading"}
+                    Continue →
                   </button>
-                  {examGradingStatus === "error" ? (
-                    <p className="chat-error">{examGradingError}</p>
-                  ) : null}
-                </form>
+                </div>
               ) : null}
 
-              {/* Results */}
-              {examGradingStatus === "done" && examGrading ? (
+              {/* ── Step: writing ── */}
+              {examStep === "writing" ? (
+                <div>
+                  {/* Paper 1: show passage */}
+                  {examPaperType === "paper1" && examPassage ? (
+                    <div className="exam-passage">{examPassage}</div>
+                  ) : null}
+
+                  {/* Paper 2: show selected works + context mode toggle */}
+                  {examPaperType === "paper2" ? (
+                    <>
+                      <div className="selected-works-tags">
+                        {examSelectedDocIds.map((docId) => {
+                          const doc = examAllDocs.find((d) => d.document_id === docId);
+                          return (
+                            <span key={docId} className="work-tag">
+                              {doc ? (doc.title || doc.filename) : docId}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <div style={{ marginBottom: 14 }}>
+                        <span style={{ fontWeight: 600, marginRight: 12 }}>Context:</span>
+                        <label style={{ marginRight: 16, cursor: "pointer" }}>
+                          <input
+                            type="radio"
+                            name="contextMode"
+                            value="chunks"
+                            checked={examContextMode === "chunks"}
+                            onChange={() => setExamContextMode("chunks")}
+                            style={{ marginRight: 4 }}
+                          />
+                          Chunk context
+                        </label>
+                        <label style={{ cursor: "pointer" }}>
+                          <input
+                            type="radio"
+                            name="contextMode"
+                            value="titles_only"
+                            checked={examContextMode === "titles_only"}
+                            onChange={() => setExamContextMode("titles_only")}
+                            style={{ marginRight: 4 }}
+                          />
+                          Titles only
+                        </label>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {/* Question */}
+                  {examQuestionText ? (
+                    <div className="exam-question-box" style={{ whiteSpace: "pre-wrap" }}>
+                      {examQuestionText}
+                    </div>
+                  ) : null}
+
+                  <form onSubmit={onSubmitExamAnswer}>
+                    <p className="exam-note" style={{ marginTop: 14 }}>
+                      Write your response below. No AI assistance is available during this step.
+                    </p>
+                    <textarea
+                      className="exam-answer-area"
+                      placeholder="Write your answer here…"
+                      value={examAnswer}
+                      onChange={(e) => setExamAnswer(e.target.value)}
+                      disabled={examGradingStatus === "grading"}
+                    />
+                    <button
+                      className="btn"
+                      type="submit"
+                      disabled={!examAnswer.trim() || examGradingStatus === "grading"}
+                    >
+                      {examGradingStatus === "grading" ? "Grading your response…" : "Submit for Grading"}
+                    </button>
+                    {examGradingStatus === "error" ? (
+                      <p className="chat-error">{examGradingError}</p>
+                    ) : null}
+                  </form>
+                </div>
+              ) : null}
+
+              {/* ── Step: results ── */}
+              {examStep === "done" && examGrading ? (
                 <div className="exam-results">
                   <h3 className="exam-score-heading">
                     Total: {examGrading.total_score} / {examGrading.max_score}
                   </h3>
+                  {examGrading.context_mode === "titles_only" ? (
+                    <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0 0 12px" }}>
+                      Graded with: titles only
+                    </p>
+                  ) : (
+                    <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0 0 12px" }}>
+                      Graded with: chunk context
+                    </p>
+                  )}
 
                   {(examGrading.criteria || []).map((c) => (
                     <div key={c.criterion} className="criterion-row">
                       <div className="criterion-header">
-                        <span className="criterion-label">
-                          {c.criterion} — {c.label}
-                        </span>
-                        <span className="criterion-score-badge">
-                          {c.score} / {c.max_score}
-                        </span>
+                        <span className="criterion-label">{c.criterion} — {c.label}</span>
+                        <span className="criterion-score-badge">{c.score} / {c.max_score}</span>
                       </div>
                       <p className="criterion-feedback">{c.feedback}</p>
                     </div>
@@ -1206,20 +1443,47 @@ export default function App() {
                       className="btn"
                       type="button"
                       onClick={() => {
-                        // Reset only question/answer/grading state, keep paper type
-                        setExamQuestion("");
-                        setExamQuestionStatus("idle");
-                        setExamQuestionError("");
-                        setExamAnswer("");
-                        setExamGrading(null);
-                        setExamGradingStatus("idle");
-                        setExamGradingError("");
-                        setTimeout(onGenerateQuestion, 0);
+                        if (examPaperType === "paper1") {
+                          // Re-enter Paper 1 (same question)
+                          setExamAnswer("");
+                          setExamGrading(null);
+                          setExamGradingStatus("idle");
+                          setExamGradingError("");
+                          setExamDebug(null);
+                          setExamStep("writing");
+                        } else {
+                          // Go back to doc picker for Paper 2
+                          setExamSelectedDocIds([]);
+                          setExamAnswer("");
+                          setExamQuestionText("");
+                          setExamGrading(null);
+                          setExamGradingStatus("idle");
+                          setExamGradingError("");
+                          setExamDebug(null);
+                          setExamStep("setup");
+                        }
                       }}
                     >
                       Try Again
                     </button>
                   </div>
+
+                  {examDebug ? (
+                    <details style={{ marginTop: 16 }}>
+                      <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.95rem", color: "var(--muted)" }}>
+                        Debug Info
+                      </summary>
+                      <div style={{ marginTop: 10 }}>
+                        <div className="debug-summary">
+                          <p className="debug-line"><strong>Inference time:</strong> {formatSeconds(examDebug.inference_seconds)}</p>
+                        </div>
+                        <h3 className="debug-section-title">Prompt Sent to Model</h3>
+                        <pre className="debug-prompt">{examDebug.prompt || ""}</pre>
+                        <h3 className="debug-section-title">Raw Model Output</h3>
+                        <pre className="debug-prompt">{examDebug.raw_output || ""}</pre>
+                      </div>
+                    </details>
+                  ) : null}
                 </div>
               ) : null}
             </section>

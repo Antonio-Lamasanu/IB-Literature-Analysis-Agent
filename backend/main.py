@@ -19,7 +19,8 @@ from chat_history import (
     create_chat_history_turn,
     load_chat_history,
 )
-from exam_service import ExamQuestionResult, GradingResult, generate_question, grade_answer
+from exam_service import GradingResult, grade_answer
+from exam_questions import PAPER1_PASSAGE, PAPER1_QUESTION, PAPER2_QUESTIONS
 from exam_history import append_exam_attempt, create_exam_attempt
 from chunking import (
     CHUNK_SCHEMA_VERSION,
@@ -1146,22 +1147,31 @@ async def process_pdf_chunks_endpoint(
 # Exam Mode — Pydantic models                                                  #
 # --------------------------------------------------------------------------- #
 
-class GenerateQuestionRequest(BaseModel):
-    document_id: str = Field(..., min_length=1, max_length=128)
-    paper_type: Literal["paper1", "paper2"] = "paper1"
+class DocumentSummary(BaseModel):
+    document_id: str
+    filename: str
+    chunks_available: bool
+    chunks_count: int | None
+    created_at: str
+    title: str | None
+    author: str | None
 
 
-class GenerateQuestionResponse(BaseModel):
+class Paper1ExamResponse(BaseModel):
+    passage: str
     question: str
-    paper_type: str
-    inference_seconds: float
+
+
+class Paper2QuestionsResponse(BaseModel):
+    questions: list[dict]
 
 
 class SubmitAnswerRequest(BaseModel):
-    document_id: str = Field(..., min_length=1, max_length=128)
     paper_type: Literal["paper1", "paper2"] = "paper1"
     question: str = Field(..., min_length=1, max_length=2_000)
     student_answer: str = Field(..., min_length=1, max_length=8_000)
+    document_ids: list[str] = Field(default_factory=list)
+    context_mode: Literal["chunks", "titles_only"] = "chunks"
 
 
 class ExamCriterionResult(BaseModel):
@@ -1172,13 +1182,21 @@ class ExamCriterionResult(BaseModel):
     feedback: str
 
 
+class ExamDebugInfo(BaseModel):
+    prompt: str
+    raw_output: str
+    inference_seconds: float
+
+
 class SubmitAnswerResponse(BaseModel):
     total_score: int
     max_score: int
     paper_type: str
+    context_mode: str
     criteria: list[ExamCriterionResult]
     overall_comments: str
     inference_seconds: float
+    debug: ExamDebugInfo
 
 
 # --------------------------------------------------------------------------- #
@@ -1201,93 +1219,160 @@ def _require_chunks(record: Any) -> Path:
     return chunks_path
 
 
-@app.post("/api/exam/generate-question", response_model=GenerateQuestionResponse)
-async def exam_generate_question(payload: GenerateQuestionRequest) -> GenerateQuestionResponse:
-    record = get_document_or_404(payload.document_id)
-    chunks_path = _require_chunks(record)
-
+@app.get("/api/status")
+async def get_status() -> dict:
+    """Return LLM availability and basic service status."""
     try:
-        result: ExamQuestionResult = await run_in_threadpool(
-            generate_question, chunks_path, payload.paper_type
-        )
-    except LLMDisabledError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-    except LLMNotConfiguredError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-    except LLMServiceError as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Question generation failed: {exc}",
-        ) from exc
+        chat_available = get_llm_service().is_chat_available()
+    except Exception:
+        chat_available = False
+    return {"chat_available": chat_available}
 
-    return GenerateQuestionResponse(
-        question=result.question,
-        paper_type=result.paper_type,
-        inference_seconds=result.inference_seconds,
-    )
+
+@app.get("/api/documents", response_model=list[DocumentSummary])
+async def list_documents() -> list[DocumentSummary]:
+    """List all registered documents, most recently created first."""
+    records = document_registry.list_all()
+    return [
+        DocumentSummary(
+            document_id=r.document_id,
+            filename=r.filename,
+            chunks_available=r.chunks_available,
+            chunks_count=r.chunks_count,
+            created_at=r.created_at,
+            title=r.title,
+            author=r.author,
+        )
+        for r in records
+    ]
+
+
+@app.get("/api/exam/paper1", response_model=Paper1ExamResponse)
+async def exam_get_paper1() -> Paper1ExamResponse:
+    """Return the hardcoded Paper 1 unseen passage and question."""
+    return Paper1ExamResponse(passage=PAPER1_PASSAGE, question=PAPER1_QUESTION)
+
+
+@app.get("/api/exam/paper2/questions", response_model=Paper2QuestionsResponse)
+async def exam_get_paper2_questions() -> Paper2QuestionsResponse:
+    """Return the Paper 2 question bank."""
+    return Paper2QuestionsResponse(questions=PAPER2_QUESTIONS)
 
 
 @app.post("/api/exam/submit-answer", response_model=SubmitAnswerResponse)
 async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerResponse:
-    record = get_document_or_404(payload.document_id)
-    chunks_path = _require_chunks(record)
+    # ---- Paper 1: no document validation needed ----
+    if payload.paper_type == "paper1":
+        try:
+            result: GradingResult = await run_in_threadpool(
+                grade_answer,
+                paper_type="paper1",
+                question=payload.question,
+                student_answer=payload.student_answer,
+                passage_text=PAPER1_PASSAGE,
+            )
+        except LLMDisabledError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        except LLMNotConfiguredError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        except LLMServiceError as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Grading failed: {exc}",
+            ) from exc
 
-    try:
-        result: GradingResult = await run_in_threadpool(
-            grade_answer,
-            chunks_path,
-            paper_type=payload.paper_type,
-            question=payload.question,
-            student_answer=payload.student_answer,
-        )
-    except LLMDisabledError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-    except LLMNotConfiguredError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-    except LLMServiceError as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Grading failed: {exc}",
-        ) from exc
+        history_doc_id = "paper1"
+        history_doc_ids: list[str] = []
+        history_chunks_path: str | None = None
 
+    # ---- Paper 2: validate exactly 2 documents ----
+    else:
+        if len(payload.document_ids) != 2:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Paper 2 requires exactly 2 document_ids.",
+            )
+
+        records = [get_document_or_404(doc_id) for doc_id in payload.document_ids]
+
+        # Chunks are only required for "chunks" context mode
+        chunks_paths: list[Path] = []
+        if payload.context_mode == "chunks":
+            for rec in records:
+                chunks_paths.append(_require_chunks(rec))
+
+        doc_titles: list[str] = [
+            f"{rec.title or rec.filename} by {rec.author or 'Unknown'}"
+            for rec in records
+        ]
+
+        try:
+            result = await run_in_threadpool(
+                grade_answer,
+                paper_type="paper2",
+                question=payload.question,
+                student_answer=payload.student_answer,
+                chunks_paths=[str(p) for p in chunks_paths] or None,
+                context_mode=payload.context_mode,
+                doc_titles=doc_titles,
+            )
+        except LLMDisabledError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        except LLMNotConfiguredError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        except LLMServiceError as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Grading failed: {exc}",
+            ) from exc
+
+        sorted_ids = sorted(payload.document_ids)
+        history_doc_id = f"{sorted_ids[0]}_{sorted_ids[1][:8]}"
+        history_doc_ids = payload.document_ids
+        history_chunks_path = str(chunks_paths[0]) if chunks_paths else None
+
+    # ---- Persist attempt ----
     score_by_criterion = {c.criterion: c for c in result.criteria}
     attempt = create_exam_attempt(
-        document_id=record.document_id,
+        document_id=history_doc_id,
         paper_type=payload.paper_type,
         question=payload.question,
         student_answer=payload.student_answer,
-        chunks_path=record.chunks_path,
-        score_a=score_by_criterion.get("A") and score_by_criterion["A"].score,
-        score_b=score_by_criterion.get("B") and score_by_criterion["B"].score,
-        score_c=score_by_criterion.get("C") and score_by_criterion["C"].score,
-        score_d=score_by_criterion.get("D") and score_by_criterion["D"].score,
+        chunks_path=history_chunks_path,
+        score_a=score_by_criterion["A"].score if "A" in score_by_criterion else None,
+        score_b=score_by_criterion["B"].score if "B" in score_by_criterion else None,
+        score_c=score_by_criterion["C"].score if "C" in score_by_criterion else None,
+        score_d=score_by_criterion["D"].score if "D" in score_by_criterion else None,
         total_score=result.total_score,
         max_score=result.max_score,
-        feedback_a=score_by_criterion.get("A") and score_by_criterion["A"].feedback,
-        feedback_b=score_by_criterion.get("B") and score_by_criterion["B"].feedback,
-        feedback_c=score_by_criterion.get("C") and score_by_criterion["C"].feedback,
-        feedback_d=score_by_criterion.get("D") and score_by_criterion["D"].feedback,
+        feedback_a=score_by_criterion["A"].feedback if "A" in score_by_criterion else None,
+        feedback_b=score_by_criterion["B"].feedback if "B" in score_by_criterion else None,
+        feedback_c=score_by_criterion["C"].feedback if "C" in score_by_criterion else None,
+        feedback_d=score_by_criterion["D"].feedback if "D" in score_by_criterion else None,
         overall_comments=result.overall_comments,
         grading_raw_output=result.raw_output,
+        document_ids=history_doc_ids,
+        context_mode=payload.context_mode,
     )
     try:
         await run_in_threadpool(
             append_exam_attempt,
-            record.document_id,
+            history_doc_id,
             attempt,
             EXAM_HISTORY_STORAGE_DIR,
         )
     except OSError as exc:
-        logger.warning("Failed to persist exam attempt for document_id=%s: %s", record.document_id, exc)
+        logger.warning("Failed to persist exam attempt for document_id=%s: %s", history_doc_id, exc)
 
     return SubmitAnswerResponse(
         total_score=result.total_score,
         max_score=result.max_score,
         paper_type=result.paper_type,
+        context_mode=result.context_mode,
         criteria=[
             ExamCriterionResult(
                 criterion=c.criterion,
@@ -1300,4 +1385,9 @@ async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerRespon
         ],
         overall_comments=result.overall_comments,
         inference_seconds=result.inference_seconds,
+        debug=ExamDebugInfo(
+            prompt=result.prompt,
+            raw_output=result.raw_output,
+            inference_seconds=result.inference_seconds,
+        ),
     )

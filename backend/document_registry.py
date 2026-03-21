@@ -163,6 +163,15 @@ class DocumentRegistry:
                     return record
         return None
 
+    def list_all(self) -> list[DocumentRecord]:
+        """Return all registered documents, most recently created first."""
+        with self._lock:
+            return sorted(
+                self._records.values(),
+                key=lambda r: r.created_at,
+                reverse=True,
+            )
+
     def find_reusable_by_source_fingerprint(self, fingerprint: str) -> DocumentRecord | None:
         with self._lock:
             matches = [
