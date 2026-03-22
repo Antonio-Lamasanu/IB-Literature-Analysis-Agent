@@ -53,7 +53,7 @@ log = logging.getLogger("benchmark")
 DEFAULT_CONFIG_PATH = _BACKEND_DIR / "benchmark_config.json"
 DOCUMENTS_INDEX_PATH = _BACKEND_DIR / "outputs" / "documents.index.json"
 
-PROMPT_FORMATS = ["base_knowledge", "rag"]
+PROMPT_FORMATS = ["base_knowledge", "rag", "rag_raw"]
 
 # Q indices (0-based) that are "cold" — model is reloaded before them
 COLD_QUESTION_INDICES = {0, 1, 2}
@@ -161,13 +161,14 @@ def run_one_question(
     retrieval_time_s = 0.0
     prompt_build_time_s = 0.0
 
-    if prompt_format == "rag":
+    if prompt_format in ("rag", "rag_raw"):
         t0 = time.perf_counter()
         ctx_result = build_chat_context_result(
             document_text,
             question,
             persisted_chunks_path=chunks_path,
             document_id=None,
+            apply_sub_chunking=prompt_format == "rag",
         )
         retrieval_time_s = time.perf_counter() - t0
         doc_context = ctx_result.context
@@ -213,7 +214,7 @@ def run_one_question(
 # Main benchmark loop
 # ---------------------------------------------------------------------------
 
-def run_benchmark(config_path: Path) -> None:
+def run_benchmark(config_path: Path, formats: list[str] | None = None) -> None:
     config = load_config(config_path)
 
     document_id: str = config.get("document_id", "")
@@ -231,6 +232,18 @@ def run_benchmark(config_path: Path) -> None:
     n_threads: int = int(config.get("n_threads", 4))
     max_tokens: int = int(config.get("max_tokens", 512))
     temperature: float = float(config.get("temperature", 0.2))
+
+    # Resolve which formats to run: CLI --formats > config "prompt_formats" > all
+    config_formats = config.get("prompt_formats")
+    if formats:
+        active_formats = [f for f in formats if f in PROMPT_FORMATS]
+    elif config_formats:
+        active_formats = [f for f in config_formats if f in PROMPT_FORMATS]
+    else:
+        active_formats = list(PROMPT_FORMATS)
+    if not active_formats:
+        log.error("No valid formats selected. Choices: %s", PROMPT_FORMATS)
+        sys.exit(1)
 
     # Load document record
     registry = DocumentRegistry(DOCUMENTS_INDEX_PATH)
@@ -268,7 +281,7 @@ def run_benchmark(config_path: Path) -> None:
     log.info("Title    : %s", title)
     log.info("Author   : %s", author)
     log.info("Models   : %d", len(model_paths))
-    log.info("Formats  : %s", PROMPT_FORMATS)
+    log.info("Formats  : %s", active_formats)
     log.info("Questions: %d", len(questions))
     log.info("n_ctx_values=%s  n_threads=%d  max_tokens=%d  temperature=%s",
              n_ctx_values, n_threads, max_tokens, temperature)
@@ -284,7 +297,7 @@ def run_benchmark(config_path: Path) -> None:
         for n_ctx in n_ctx_values:
             log.info("  n_ctx: %d", n_ctx)
 
-            for prompt_format in PROMPT_FORMATS:
+            for prompt_format in active_formats:
                 log.info("    Format: %s", prompt_format)
 
                 llm_cfg = LLMConfig(
@@ -529,5 +542,13 @@ if __name__ == "__main__":
         default=DEFAULT_CONFIG_PATH,
         help="Path to benchmark_config.json (default: backend/benchmark_config.json)",
     )
+    parser.add_argument(
+        "--formats",
+        nargs="+",
+        choices=PROMPT_FORMATS,
+        default=None,
+        metavar="FORMAT",
+        help=f"Prompt formats to run (overrides config). Choices: {' '.join(PROMPT_FORMATS)}",
+    )
     args = parser.parse_args()
-    run_benchmark(args.config)
+    run_benchmark(args.config, formats=args.formats)
