@@ -944,7 +944,7 @@ async def chat_endpoint(payload: ChatRequest) -> ChatResponse:
     prompt_build_seconds = 0.0
     inference_seconds = 0.0
     if context_result.history_reuse_hit and context_result.reused_answer is not None:
-        reply_text = context_result.reused_answer
+        reply_text = "[Answer retrieved from chat history]\n\n" + context_result.reused_answer
     else:
         try:
             inference_result = await run_in_threadpool(

@@ -179,6 +179,9 @@ class ExcerptFeature:
     term_freq: Counter[str]
     heading_terms: frozenset[str]
     character_terms: frozenset[str]
+    location_terms: frozenset[str]
+    organization_terms: frozenset[str]
+    event_terms: frozenset[str]
     token_set: frozenset[str]
     document_length: int
     unit_type: str
@@ -209,6 +212,13 @@ class RetrievalCorpus:
 
 def _normalize_space(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _normalize_query_for_match(q: str) -> str:
+    """Normalize a query for exact-match comparison: lowercase, strip punctuation, collapse whitespace."""
+    q = (q or "").strip().lower()
+    q = re.sub(r"[^\w\s]", "", q)
+    return re.sub(r"\s+", " ", q).strip()
 
 
 def _tokenize(text: str) -> list[str]:
@@ -331,12 +341,30 @@ def _build_chunk_excerpt_feature(index: int, chunk: dict[str, Any]) -> ExcerptFe
         for item in metadata.get("character_mentions") or []
         for token in _tokenize(str(item))
     )
+    location_terms = frozenset(
+        token
+        for item in metadata.get("location_mentions") or []
+        for token in _tokenize(str(item))
+    )
+    organization_terms = frozenset(
+        token
+        for item in metadata.get("organization_mentions") or []
+        for token in _tokenize(str(item))
+    )
+    event_terms = frozenset(
+        token
+        for item in metadata.get("event_mentions") or []
+        for token in _tokenize(str(item))
+    )
 
     return ExcerptFeature(
         excerpt=excerpt,
         term_freq=term_freq,
         heading_terms=heading_terms,
         character_terms=character_terms,
+        location_terms=location_terms,
+        organization_terms=organization_terms,
+        event_terms=event_terms,
         token_set=frozenset(term_freq),
         document_length=document_length,
         unit_type=str(metadata.get("unit_type") or "unknown").strip().lower() or "unknown",
@@ -571,6 +599,18 @@ def _metadata_boost(feature: ExcerptFeature, query: str, query_terms: Counter[st
     if character_matches:
         boost += min(0.35, 0.18 + 0.05 * character_matches)
 
+    location_matches = len(query_term_set & feature.location_terms)
+    if location_matches:
+        boost += min(0.35, 0.15 + 0.05 * location_matches)
+
+    event_matches = len(query_term_set & feature.event_terms)
+    if event_matches:
+        boost += min(0.25, 0.10 + 0.05 * event_matches)
+
+    organization_matches = len(query_term_set & feature.organization_terms)
+    if organization_matches:
+        boost += min(0.15, 0.07 + 0.03 * organization_matches)
+
     if query_term_set & _DIALOGUE_QUERY_TERMS and feature.has_dialogue:
         boost += 0.18
 
@@ -585,7 +625,7 @@ def _metadata_boost(feature: ExcerptFeature, query: str, query_terms: Counter[st
     if len(normalized_query) >= 8 and normalized_query in excerpt_text:
         boost += 0.35
 
-    return min(0.9, boost)
+    return min(1.1, boost)
 
 
 def _looks_near_duplicate(candidate: RetrievedExcerpt, selected: list[RetrievedExcerpt]) -> bool:
@@ -1200,6 +1240,39 @@ def build_chat_context_result_with_history(
             final_candidate_mix=[_build_chunk_candidate(item) for item in base_result.retrieved_excerpts],
             chunk_retrieval_mode=base_result.retrieval_mode,
         )
+
+    # Fast path for history_first: exact match on normalized user query — bypasses BM25 entirely.
+    # BM25 IDF goes negative with tiny corpora, making threshold-based reuse unreliable.
+    if normalized_mode == "history_first" and available_history_turns:
+        new_q_norm = _normalize_query_for_match(latest_user_question)
+        for turn in available_history_turns:
+            if (
+                _normalize_query_for_match(turn.user_query) == new_q_norm
+                and turn.assistant_answer.strip()
+            ):
+                matched_turn = RetrievedHistoryTurn(
+                    turn_id=turn.turn_id,
+                    document_id=turn.document_id,
+                    created_at=turn.created_at,
+                    user_query=turn.user_query,
+                    assistant_answer=turn.assistant_answer,
+                    score=999.0,
+                    token_estimate=estimate_tokens(turn.assistant_answer),
+                    answer_reused_from_history=True,
+                    reused_from_turn_id=turn.reused_from_turn_id,
+                )
+                return ChatContextResult(
+                    context="",
+                    retrieval_mode="history_exact_match",
+                    retrieved_excerpts=[],
+                    retrieved_history=[matched_turn],
+                    history_checked=True,
+                    history_reuse_hit=True,
+                    history_top_score=999.0,
+                    history_threshold=history_reuse_threshold,
+                    reused_turn_id=turn.turn_id,
+                    reused_answer=turn.assistant_answer,
+                )
 
     history_candidates = retrieve_relevant_history_turns(
         available_history_turns,

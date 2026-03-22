@@ -621,29 +621,45 @@ def _extract_character_mentions_regex(text: str) -> list[str]:
     return [name for name, score in ranked if score >= 2][:6]
 
 
-def _extract_character_mentions_spacy(text: str, nlp) -> list[str]:
-    """spaCy NER-based character extraction using PERSON entity labels."""
+def _extract_named_entities_spacy(text: str, nlp) -> dict[str, list[str]]:
+    """Extract PERSON, LOC/GPE, ORG, and EVENT entities in one spaCy pass."""
     doc = nlp(text[:8_000])
-    candidates: Counter[str] = Counter()
+    characters: Counter[str] = Counter()
+    locations: Counter[str] = Counter()
+    organizations: Counter[str] = Counter()
+    events: Counter[str] = Counter()
     for ent in doc.ents:
+        name = ent.text.strip()
+        if not name:
+            continue
         if ent.label_ == "PERSON":
-            name = ent.text.strip()
-            if not name or name.upper() == name:
+            if name.upper() == name:
                 continue
             if any(w in NAME_STOPWORDS for w in name.split()):
                 continue
-            candidates[name] += 1
-    ranked = sorted(candidates.items(), key=lambda item: (-item[1], item[0]))
-    return [name for name, _ in ranked][:6]
+            characters[name] += 1
+        elif ent.label_ in {"LOC", "GPE"}:
+            locations[name] += 1
+        elif ent.label_ == "ORG":
+            organizations[name] += 1
+        elif ent.label_ == "EVENT":
+            events[name] += 1
+    return {
+        "characters": [n for n, _ in sorted(characters.items(), key=lambda x: (-x[1], x[0]))][:6],
+        "locations": [n for n, _ in sorted(locations.items(), key=lambda x: (-x[1], x[0]))][:6],
+        "organizations": [n for n, _ in sorted(organizations.items(), key=lambda x: (-x[1], x[0]))][:4],
+        "events": [n for n, _ in sorted(events.items(), key=lambda x: (-x[1], x[0]))][:4],
+    }
 
 
-def _extract_character_mentions(text: str) -> list[str]:
+def _extract_all_mentions(text: str) -> dict[str, list[str]]:
+    _empty: dict[str, list[str]] = {"characters": [], "locations": [], "organizations": [], "events": []}
     if not text or not text.strip():
-        return []
+        return _empty
     nlp = _get_nlp()
     if nlp is not None:
-        return _extract_character_mentions_spacy(text, nlp)
-    return _extract_character_mentions_regex(text)
+        return _extract_named_entities_spacy(text, nlp)
+    return {**_empty, "characters": _extract_character_mentions_regex(text)}
 
 
 def _derive_unit_type_regex(text: str) -> str:
@@ -691,7 +707,11 @@ def _build_chunk_record(
     token_estimate = estimate_tokens(chunk_text) if chunk_text else 0
     dialogue_ratio = _estimate_dialogue_ratio(chunk_text)
     has_dialogue = dialogue_ratio >= 0.12 or bool(QUOTED_TEXT_RE.search(chunk_text))
-    character_mentions = _extract_character_mentions(chunk_text)
+    mentions = _extract_all_mentions(chunk_text)
+    character_mentions = mentions["characters"]
+    location_mentions = mentions["locations"]
+    organization_mentions = mentions["organizations"]
+    event_mentions = mentions["events"]
     unit_type = _derive_unit_type(chunk_text, has_dialogue=has_dialogue, dialogue_ratio=dialogue_ratio)
 
     raw_units = None
@@ -726,6 +746,9 @@ def _build_chunk_record(
         metadata={
             "unit_type": unit_type,
             "character_mentions": character_mentions,
+            "location_mentions": location_mentions,
+            "organization_mentions": organization_mentions,
+            "event_mentions": event_mentions,
             "has_dialogue": has_dialogue,
             "dialogue_ratio": dialogue_ratio,
         },
