@@ -61,6 +61,7 @@ export default function App() {
   const [chatStatus, setChatStatus] = useState("idle");
   const [chatError, setChatError] = useState("");
   const [chatDebug, setChatDebug] = useState(null);
+  const [promptFormat, setPromptFormat] = useState("rag");
 
   // Exam mode state
   const [activeMode, setActiveMode] = useState("learn");
@@ -351,38 +352,77 @@ export default function App() {
     setChatDebug(null);
     setChatStatus("sending");
 
+    // Add a streaming placeholder for the assistant message
+    setChatMessages((previous) => [
+      ...previous,
+      { role: "assistant", content: "", streaming: true },
+    ]);
+
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat`, {
+      const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           document_id: activeChatDocId,
           messages: nextMessages,
+          prompt_format: promptFormat,
         }),
       });
 
       if (!response.ok) {
+        // Remove placeholder before throwing
+        setChatMessages((previous) => previous.slice(0, -1));
         const detail = await parseErrorDetail(response, "Failed to get chat response.");
         throw new Error(detail);
       }
 
-      const data = await response.json();
-      const reply = String(data?.reply || "").trim();
-      if (!reply) {
-        throw new Error("Chat endpoint returned an empty reply.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // keep partial line
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let ev;
+          try {
+            ev = JSON.parse(line.slice(6));
+          } catch {
+            continue;
+          }
+
+          if (ev.type === "token") {
+            setChatMessages((previous) => {
+              const msgs = [...previous];
+              const last = msgs[msgs.length - 1];
+              msgs[msgs.length - 1] = { ...last, content: last.content + ev.text };
+              return msgs;
+            });
+          } else if (ev.type === "done") {
+            setChatDebug(ev.debug || null);
+            setChatMessages((previous) => {
+              const msgs = [...previous];
+              const last = msgs[msgs.length - 1];
+              msgs[msgs.length - 1] = {
+                ...last,
+                streaming: false,
+                totalSeconds: Number(ev.debug?.total_seconds) || null,
+              };
+              return msgs;
+            });
+          } else if (ev.type === "error") {
+            setChatMessages((previous) => previous.slice(0, -1));
+            throw new Error(ev.detail || "Chat stream error.");
+          }
+        }
       }
 
-      setChatDebug(data?.debug || null);
-      setChatMessages((previous) => [
-        ...previous,
-        {
-          role: "assistant",
-          content: reply,
-          totalSeconds: Number(data?.debug?.total_seconds) || null,
-        },
-      ]);
       setChatStatus("idle");
     } catch (err) {
       setChatStatus("error");
@@ -734,6 +774,17 @@ export default function App() {
           border: 1px solid #dbe0ff;
         }
 
+        .chat-cursor {
+          display: inline-block;
+          margin-left: 1px;
+          animation: blink 0.8s step-start infinite;
+        }
+
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+
         .chat-form {
           margin-top: 12px;
           display: flex;
@@ -765,6 +816,19 @@ export default function App() {
         .chat-send:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+
+        .prompt-format-toggle {
+          display: flex;
+          gap: 8px;
+          margin-top: 14px;
+        }
+
+        .prompt-format-note {
+          margin: 6px 0 0;
+          font-size: 0.78rem;
+          color: #6b7280;
+          font-style: italic;
         }
 
         .chat-error {
@@ -1139,6 +1203,7 @@ export default function App() {
                             setSelectedLearnDocId(doc.document_id);
                             setChatMessages([]);
                             setChatDebug(null);
+                            setPromptFormat("rag");
                           }}
                         >
                           <p className="doc-card-name">{doc.title || doc.filename}</p>
@@ -1170,12 +1235,46 @@ export default function App() {
                             </p>
                           ) : null}
                           <p className={`chat-message ${message.role}`}>
-                            <strong>{message.role === "user" ? "You" : "Assistant"}:</strong> {message.content}
+                            <strong>{message.role === "user" ? "You" : "Assistant"}:</strong>{" "}
+                            {message.content}
+                            {message.streaming ? <span className="chat-cursor">▍</span> : null}
                           </p>
                         </div>
                       ))
                     )}
                   </div>
+
+                  <div className="prompt-format-toggle">
+                    <button
+                      className={`mode-btn${promptFormat === "rag" ? " active" : ""}`}
+                      type="button"
+                      disabled={isChatSending}
+                      onClick={() => setPromptFormat("rag")}
+                    >
+                      RAG
+                    </button>
+                    <button
+                      className={`mode-btn${promptFormat === "rag_raw" ? " active" : ""}`}
+                      type="button"
+                      disabled={isChatSending}
+                      onClick={() => setPromptFormat("rag_raw")}
+                    >
+                      Raw Chunks
+                    </button>
+                    <button
+                      className={`mode-btn${promptFormat === "base_knowledge" ? " active" : ""}`}
+                      type="button"
+                      disabled={isChatSending}
+                      onClick={() => setPromptFormat("base_knowledge")}
+                    >
+                      Base Knowledge
+                    </button>
+                  </div>
+                  {promptFormat === "base_knowledge" ? (
+                    <p className="prompt-format-note">Model answers from general knowledge — no document retrieval.</p>
+                  ) : promptFormat === "rag_raw" ? (
+                    <p className="prompt-format-note">Retrieves chunks directly — no sentence-window sub-chunking.</p>
+                  ) : null}
 
                   <form className="chat-form" onSubmit={onSendChat}>
                     <textarea
@@ -1219,31 +1318,71 @@ export default function App() {
                   <h3 className="debug-section-title">Final Prompt</h3>
                   <pre className="debug-prompt">{chatDebug.final_prompt || ""}</pre>
 
-                  <h3 className="debug-section-title">Retrieved Excerpts</h3>
-                  <div className="debug-excerpts">
-                    {(chatDebug.retrieved_excerpts || []).length === 0 ? (
-                      <p className="debug-note">No scored excerpts were returned for this request.</p>
-                    ) : (
-                      chatDebug.retrieved_excerpts.map((excerpt) => {
-                        const pageLabel =
-                          excerpt.page_start === excerpt.page_end
+                  {(chatDebug.raw_retrieved_excerpts || []).length > 0 ? (
+                    <>
+                      <h3 className="debug-section-title">Retrieved Chunks (raw)</h3>
+                      <div className="debug-excerpts">
+                        {chatDebug.raw_retrieved_excerpts.map((excerpt) => {
+                          const pageLabel = excerpt.page_start === excerpt.page_end
                             ? `Page ${excerpt.page_start}`
                             : `Pages ${excerpt.page_start}-${excerpt.page_end}`;
-
-                        return (
-                          <article
-                            key={`${excerpt.excerpt_id}-${excerpt.page_start}-${excerpt.page_end}`}
-                            className="debug-excerpt"
-                          >
-                            <p className="debug-excerpt-meta">
-                              <strong>Excerpt {excerpt.excerpt_id}</strong> | Score {Number(excerpt.score || 0).toFixed(3)} | {pageLabel} | {excerpt.heading || "UNKNOWN"}
-                            </p>
-                            <p className="debug-excerpt-text">{excerpt.text || ""}</p>
-                          </article>
-                        );
-                      })
-                    )}
-                  </div>
+                          return (
+                            <article key={`raw-${excerpt.excerpt_id}-${excerpt.page_start}`} className="debug-excerpt">
+                              <p className="debug-excerpt-meta">
+                                <strong>{excerpt.excerpt_id}</strong> | Score {Number(excerpt.score || 0).toFixed(3)} | {pageLabel} | {excerpt.heading || "UNKNOWN"}
+                              </p>
+                              <p className="debug-excerpt-text">{excerpt.text || ""}</p>
+                            </article>
+                          );
+                        })}
+                      </div>
+                      <h3 className="debug-section-title">Sub-chunked (sent to model)</h3>
+                      <div className="debug-excerpts">
+                        {(chatDebug.retrieved_excerpts || []).length === 0 ? (
+                          <p className="debug-note">No sub-chunked excerpts.</p>
+                        ) : chatDebug.retrieved_excerpts.map((excerpt) => {
+                          const pageLabel = excerpt.page_start === excerpt.page_end
+                            ? `Page ${excerpt.page_start}`
+                            : `Pages ${excerpt.page_start}-${excerpt.page_end}`;
+                          return (
+                            <article key={`sub-${excerpt.excerpt_id}-${excerpt.page_start}`} className="debug-excerpt">
+                              <p className="debug-excerpt-meta">
+                                <strong>{excerpt.excerpt_id}</strong> | Score {Number(excerpt.score || 0).toFixed(3)} | {pageLabel} | {excerpt.heading || "UNKNOWN"}
+                              </p>
+                              <p className="debug-excerpt-text">{excerpt.text || ""}</p>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="debug-section-title">Retrieved Excerpts</h3>
+                      <div className="debug-excerpts">
+                        {(chatDebug.retrieved_excerpts || []).length === 0 ? (
+                          <p className="debug-note">No scored excerpts were returned for this request.</p>
+                        ) : (
+                          chatDebug.retrieved_excerpts.map((excerpt) => {
+                            const pageLabel =
+                              excerpt.page_start === excerpt.page_end
+                                ? `Page ${excerpt.page_start}`
+                                : `Pages ${excerpt.page_start}-${excerpt.page_end}`;
+                            return (
+                              <article
+                                key={`${excerpt.excerpt_id}-${excerpt.page_start}-${excerpt.page_end}`}
+                                className="debug-excerpt"
+                              >
+                                <p className="debug-excerpt-meta">
+                                  <strong>Excerpt {excerpt.excerpt_id}</strong> | Score {Number(excerpt.score || 0).toFixed(3)} | {pageLabel} | {excerpt.heading || "UNKNOWN"}
+                                </p>
+                                <p className="debug-excerpt-text">{excerpt.text || ""}</p>
+                              </article>
+                            );
+                          })
+                        )}
+                      </div>
+                    </>
+                  )}
                 </>
               ) : null}
             </aside>

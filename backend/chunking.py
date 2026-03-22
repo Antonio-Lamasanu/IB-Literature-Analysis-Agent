@@ -19,6 +19,11 @@ _nlp = None  # None = not tried; False = failed/unavailable
 _nlp_lock = _threading.Lock()
 
 
+def get_spacy_nlp():
+    """Public accessor for the shared spaCy pipeline (used by retrieval sub-chunking)."""
+    return _get_nlp()
+
+
 def _get_nlp():
     """Return cached spaCy pipeline, or None if unavailable."""
     global _nlp

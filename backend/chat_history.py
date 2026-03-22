@@ -231,3 +231,41 @@ def append_chat_history_turn(
         turns.append(turn)
         _write_chat_history_unlocked(history_path, document_id, turns)
     return history_path
+
+
+def history_embeddings_path(document_id: str, storage_dir: str | Path) -> Path:
+    """Path to the per-document history embeddings file."""
+    base_dir = Path(storage_dir)
+    return base_dir / f"{_sanitize_document_id(document_id)}.history.embeddings.npy"
+
+
+def embed_and_save_history(document_id: str, storage_dir: str | Path) -> None:
+    """Rebuild and persist embeddings for all history turns (called as a background task).
+
+    Loads all current turns, encodes query+answer for each, and saves to
+    {doc_id}.history.embeddings.npy — a full rebuild keeps the index aligned with the
+    turns array without needing to track row counts.
+    """
+    try:
+        from embeddings import encode_texts
+        import numpy as np
+    except ImportError:
+        return
+
+    turns = load_chat_history(document_id, storage_dir)
+    if not turns:
+        return
+
+    texts = [f"{t.user_query} {t.assistant_answer}" for t in turns]
+    try:
+        embeddings = encode_texts(texts)
+    except Exception as exc:
+        logger.warning("embed_and_save_history: encoding failed for doc %s: %s", document_id, exc)
+        return
+
+    emb_path = history_embeddings_path(document_id, storage_dir)
+    emb_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        np.save(str(emb_path), embeddings)
+    except Exception as exc:
+        logger.warning("embed_and_save_history: save failed for doc %s: %s", document_id, exc)

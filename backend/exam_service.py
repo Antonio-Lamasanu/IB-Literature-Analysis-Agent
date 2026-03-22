@@ -19,8 +19,13 @@ from retrieval import format_excerpt_context, retrieve_relevant_excerpts
 # --------------------------------------------------------------------------- #
 
 _GRADING_MAX_EXCERPTS = 3
-_GRADING_TOKEN_BUDGET = 450
+_grading_token_budget: int = 450
 _GRADING_RETRIEVE_CANDIDATES = 12
+
+
+def set_grading_token_budget(n: int) -> None:
+    global _grading_token_budget
+    _grading_token_budget = max(64, int(n))
 
 # BM25 query strings used when retrieving context for grading
 GRADING_QUERY: dict[str, str] = {
@@ -126,7 +131,7 @@ def retrieve_multi_doc_context(chunks_paths: list[str | Path], paper_type: str) 
             query,
             persisted_chunks_path=Path(chunks_path),
             max_excerpts=_GRADING_MAX_EXCERPTS,
-            context_token_budget=_GRADING_TOKEN_BUDGET,
+            context_token_budget=_grading_token_budget,
             retrieve_candidates=_GRADING_RETRIEVE_CANDIDATES,
         )
         label = f"--- Work {idx} ---"

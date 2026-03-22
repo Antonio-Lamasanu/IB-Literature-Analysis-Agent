@@ -5,6 +5,7 @@ import os
 import re
 import threading
 import time
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -238,6 +239,41 @@ class LLMService:
             inference_seconds=inference_seconds,
         )
 
+    def generate_raw_reply_stream(self, prompt: str) -> Generator[str, None, "LLMInferenceResult"]:
+        """Stream tokens from a pre-built prompt with no context injection.
+
+        Usage identical to generate_reply_stream — yield tokens, catch StopIteration for result.
+        """
+        llm = self._get_llm()
+        inference_started = time.perf_counter()
+        tokens: list[str] = []
+        with self._inference_lock:
+            stream = llm(
+                prompt,
+                max_tokens=self._config.max_tokens,
+                temperature=self._config.temperature,
+                top_p=0.9,
+                repeat_penalty=1.1,
+                stop=["\nUser:"],
+                stream=True,
+            )
+            for chunk in stream:
+                token = chunk["choices"][0]["text"]
+                if token:
+                    tokens.append(token)
+                    yield token
+
+        inference_seconds = time.perf_counter() - inference_started
+        full_reply = "".join(tokens).strip()
+        if not full_reply:
+            raise LLMServiceError("Model returned an empty response.")
+        return LLMInferenceResult(
+            reply=full_reply,
+            final_prompt=prompt,
+            prompt_build_seconds=0.0,
+            inference_seconds=inference_seconds,
+        )
+
     def _build_prompt_with_token_budget(
         self,
         *,
@@ -284,6 +320,69 @@ class LLMService:
             document_text=context_text,
             messages=messages,
             max_history_messages=max_history_messages,
+        )
+
+    def generate_reply_stream(
+        self,
+        *,
+        document_text: str,
+        messages: list[dict[str, str]],
+        max_history_messages: int,
+    ) -> Generator[str, None, LLMInferenceResult]:
+        """Stream reply tokens one-by-one; the generator's return value is LLMInferenceResult.
+
+        Usage:
+            gen = svc.generate_reply_stream(...)
+            try:
+                while True:
+                    token = next(gen)
+                    # send token to client
+            except StopIteration as exc:
+                result = exc.value  # LLMInferenceResult with timings and full reply
+        """
+        normalized_messages = self._normalize_messages(messages)
+        if not normalized_messages:
+            raise LLMServiceError("At least one chat message is required.")
+        if not document_text or not document_text.strip():
+            raise LLMServiceError("Document text is empty.")
+
+        llm = self._get_llm()
+        prompt_build_started = time.perf_counter()
+        prompt = self._build_prompt_with_token_budget(
+            llm=llm,
+            document_context=document_text,
+            messages=normalized_messages,
+            max_history_messages=max_history_messages,
+        )
+        prompt_build_seconds = time.perf_counter() - prompt_build_started
+
+        inference_started = time.perf_counter()
+        tokens: list[str] = []
+        with self._inference_lock:
+            stream = llm(
+                prompt,
+                max_tokens=self._config.max_tokens,
+                temperature=self._config.temperature,
+                top_p=0.9,
+                repeat_penalty=1.1,
+                stop=["\nUser:"],
+                stream=True,
+            )
+            for chunk in stream:
+                token = chunk["choices"][0]["text"]
+                if token:
+                    tokens.append(token)
+                    yield token
+
+        inference_seconds = time.perf_counter() - inference_started
+        full_reply = "".join(tokens).strip()
+        if not full_reply:
+            raise LLMServiceError("Model returned an empty response.")
+        return LLMInferenceResult(
+            reply=full_reply,
+            final_prompt=prompt,
+            prompt_build_seconds=prompt_build_seconds,
+            inference_seconds=inference_seconds,
         )
 
     def estimate_context_token_budget(

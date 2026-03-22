@@ -347,7 +347,8 @@ def run_benchmark(config_path: Path) -> None:
                         error = str(exc)
 
                     log.info(
-                        "      -> inference=%.1fs  total=%.1fs",
+                        "      -> retrieval=%.1fs  inference=%.1fs  total=%.1fs",
+                        result["retrieval_time_s"],
                         result["inference_time_s"],
                         result["total_time_s"],
                     )
@@ -444,25 +445,26 @@ def _write_report(
                     continue
 
                 lines.append(f"    Prompt format: {fmt}")
-                lines.append(f"    {'Q#':<4} {'Type':<10} {'Infer(s)':<10} {'Total(s)':<10} Answer preview")
-                lines.append(f"    {'-'*4} {'-'*10} {'-'*10} {'-'*10} {'-'*40}")
+                lines.append(f"    {'Q#':<4} {'Type':<10} {'Retr(s)':<9} {'Infer(s)':<10} {'Total(s)':<10} Answer preview")
+                lines.append(f"    {'-'*4} {'-'*10} {'-'*9} {'-'*10} {'-'*10} {'-'*40}")
 
                 for r in sorted(cell_records, key=lambda x: x["question_index"]):
                     q_num = r["question_index"]
                     q_type = r["question_type"]
+                    retr = r["retrieval_time_s"]
                     infer = r["inference_time_s"]
                     total = r["total_time_s"]
                     preview = (r["answer"] or "[ERROR]")[:60].replace("\n", " ")
                     if len(r["answer"]) > 60:
                         preview += "..."
-                    lines.append(f"    {q_num:<4} {q_type:<10} {infer:<10.1f} {total:<10.1f} {preview}")
+                    lines.append(f"    {q_num:<4} {q_type:<10} {retr:<9.1f} {infer:<10.1f} {total:<10.1f} {preview}")
 
                 lines.append("")
 
             # Per-format timing summary for this n_ctx
-            lines.append(f"    Timing summary for n_ctx={n_ctx} (inference seconds):")
-            lines.append(f"    {'Format':<18} {'Q1':>6} {'Q2':>6} {'Q3':>6} {'Q4':>6} {'Q5':>6} {'Total':>8}")
-            lines.append(f"    {'-'*18} {'---':>6} {'---':>6} {'---':>6} {'---':>6} {'---':>6} {'-----':>8}")
+            lines.append(f"    Timing summary for n_ctx={n_ctx}:")
+            lines.append(f"    {'Format':<18} {'Metric':<12} {'Q1':>6} {'Q2':>6} {'Q3':>6} {'Q4':>6} {'Q5':>6} {'Total':>8}")
+            lines.append(f"    {'-'*18} {'-'*12} {'---':>6} {'---':>6} {'---':>6} {'---':>6} {'---':>6} {'-----':>8}")
             for fmt in PROMPT_FORMATS:
                 fmt_ctx_records = sorted(
                     [r for r in records if r["model"] == model_name and r["n_ctx"] == n_ctx and r["prompt_format"] == fmt],
@@ -470,10 +472,14 @@ def _write_report(
                 )
                 if not fmt_ctx_records:
                     continue
-                times = [r["inference_time_s"] for r in fmt_ctx_records]
-                total_infer = sum(times)
-                time_cols = "  ".join(f"{t:>6.1f}" for t in times)
-                lines.append(f"    {fmt:<18} {time_cols}  {total_infer:>8.1f}")
+                retr_times = [r["retrieval_time_s"] for r in fmt_ctx_records]
+                infer_times = [r["inference_time_s"] for r in fmt_ctx_records]
+                total_retr = sum(retr_times)
+                total_infer = sum(infer_times)
+                retr_cols = "  ".join(f"{t:>6.1f}" for t in retr_times)
+                infer_cols = "  ".join(f"{t:>6.1f}" for t in infer_times)
+                lines.append(f"    {fmt:<18} {'retrieval':<12} {retr_cols}  {total_retr:>8.1f}")
+                lines.append(f"    {'':<18} {'inference':<12} {infer_cols}  {total_infer:>8.1f}")
             lines.append("")
 
         lines.append("")
@@ -502,7 +508,7 @@ def _write_report(
                     q_num = r["question_index"]
                     q_text = questions[q_num - 1] if q_num <= len(questions) else r["question"]
                     lines.append(f"\nQ{q_num} [{r['question_type']}]: {q_text}")
-                    lines.append(f"Inference: {r['inference_time_s']:.1f}s")
+                    lines.append(f"Retrieval: {r['retrieval_time_s']:.1f}s  Inference: {r['inference_time_s']:.1f}s")
                     lines.append(f"Prompt sent to model:\n{r.get('final_prompt', '(not recorded)')}")
                     lines.append(f"Answer:\n{r['answer'] or '[ERROR: ' + r.get('error', 'unknown') + ']'}")
                     lines.append("")

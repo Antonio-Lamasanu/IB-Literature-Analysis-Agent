@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from chat_history import ChatHistoryTurn
-from chunking import ChunkParams, build_chunks, estimate_tokens, parse_units_from_marked_text
+from chunking import ChunkParams, build_chunks, estimate_tokens, get_spacy_nlp, parse_units_from_marked_text
 
 
 TOKEN_RE = re.compile(r"\b[\w']+\b", flags=re.UNICODE)
@@ -77,6 +77,7 @@ _NARRATION_QUERY_TERMS = {"happen", "happens", "happened", "story", "plot", "nar
 
 _chunk_record_cache: OrderedDict[tuple[str, str, int, int], list[dict[str, Any]]] = OrderedDict()
 _retrieval_corpus_cache: OrderedDict[tuple[str, str, int, int], "RetrievalCorpus"] = OrderedDict()
+_history_emb_cache: OrderedDict[tuple, "Any"] = OrderedDict()  # cache key → np.ndarray | None
 _cache_lock = threading.Lock()
 
 
@@ -108,6 +109,7 @@ class ChatContextResult:
     retrieved_excerpts: list[RetrievedExcerpt]
     retrieved_history: list["RetrievedHistoryTurn"] = field(default_factory=list)
     retrieved_chunk_candidates: list[RetrievedExcerpt] = field(default_factory=list)
+    raw_retrieved_excerpts: list[RetrievedExcerpt] = field(default_factory=list)
     final_candidate_mix: list["RetrievedCandidate"] = field(default_factory=list)
     history_checked: bool = False
     history_reuse_hit: bool = False
@@ -267,6 +269,54 @@ def _build_chunk_cache_key(
         stat.st_mtime_ns ^ emb_mtime,
         stat.st_size,
     )
+
+
+def _build_history_emb_cache_key(
+    history_json_path: Path,
+    emb_path: Path,
+    document_id: str,
+) -> tuple[str, str, int, int, int]:
+    json_mtime = history_json_path.stat().st_mtime_ns if history_json_path.exists() else 0
+    json_size = history_json_path.stat().st_size if history_json_path.exists() else 0
+    emb_mtime = emb_path.stat().st_mtime_ns if emb_path.exists() else 0
+    return (document_id, str(history_json_path.resolve()), json_mtime, emb_mtime, json_size)
+
+
+def load_history_embeddings(
+    document_id: str,
+    storage_dir: str | Path,
+) -> "Any":
+    """Load history embeddings from disk with mtime-based cache invalidation.
+
+    Returns an np.ndarray of shape (N, 384) aligned with the history turns in the JSON,
+    or None if the file doesn't exist or is unreadable.
+    """
+    from chat_history import history_embeddings_path, get_history_path
+    storage_dir = Path(storage_dir)
+    history_json_path = get_history_path(document_id, storage_dir)
+    emb_path = history_embeddings_path(document_id, storage_dir)
+
+    if not emb_path.exists():
+        return None
+
+    cache_key = _build_history_emb_cache_key(history_json_path, emb_path, document_id)
+    with _cache_lock:
+        cached = _history_emb_cache.get(cache_key)
+        if cached is not None:
+            _history_emb_cache.move_to_end(cache_key)
+            return cached
+
+    try:
+        import numpy as np
+        arr = np.load(str(emb_path)).astype(np.float32)
+        if arr.ndim != 2 or arr.shape[0] == 0:
+            return None
+    except Exception as exc:
+        logger.warning("Failed to load history embeddings from %s: %s", emb_path, exc)
+        return None
+
+    with _cache_lock:
+        return _remember_cache_value(_history_emb_cache, cache_key, arr)
 
 
 def load_persisted_chunks(
@@ -859,6 +909,7 @@ def retrieve_relevant_history_turns(
     latest_user_question: str,
     *,
     max_candidates: int = DEFAULT_RETRIEVE_CANDIDATES,
+    history_embeddings: "Any" = None,
 ) -> list[RetrievedHistoryTurn]:
     query_terms = Counter(_tokenize(latest_user_question))
     if not history_turns or not query_terms:
@@ -868,9 +919,25 @@ def retrieve_relevant_history_turns(
     if not features:
         return []
 
+    # Semantic scores — available when history_embeddings aligns with features length
+    cosine_scores: list[float] | None = None
+    if history_embeddings is not None:
+        try:
+            import numpy as np
+            from embeddings import encode_texts
+            if history_embeddings.shape[0] == len(features):
+                q_vec = encode_texts([latest_user_question])
+                if q_vec.shape[0] == 1:
+                    cosine_scores = np.clip(history_embeddings @ q_vec[0], -1.0, 1.0).tolist()
+        except Exception as exc:
+            logger.debug("History semantic scoring failed: %s", exc)
+
+    BM25_W = 0.6 if cosine_scores else 1.0
+    SEM_W = 0.4
+
     total_docs = len(features)
     ranked: list[RetrievedHistoryTurn] = []
-    for feature in features:
+    for i, feature in enumerate(features):
         query_score = _score_bm25_term_freq(
             feature.query_term_freq,
             feature.query_length,
@@ -887,9 +954,16 @@ def retrieve_relevant_history_turns(
             total_docs=total_docs,
             avg_doc_length=avg_doc_length,
         )
-        total_score = (1.15 * query_score) + (0.9 * answer_score)
-        if total_score <= 0:
-            continue
+        bm25_raw = (1.15 * query_score) + (0.9 * answer_score)
+        if cosine_scores is not None:
+            cos = cosine_scores[i]
+            total_score = BM25_W * bm25_raw + SEM_W * cos
+            if total_score <= 0 and bm25_raw <= 0:
+                continue
+        else:
+            total_score = bm25_raw
+            if total_score <= 0:
+                continue
         total_score += _history_metadata_boost(feature, latest_user_question, query_terms)
         ranked.append(
             RetrievedHistoryTurn(
@@ -1076,6 +1150,59 @@ def retrieve_ranked_chunk_excerpts(
     )
 
 
+def _sub_chunk_excerpt(
+    excerpt: RetrievedExcerpt,
+    query_tokens: frozenset[str],
+    nlp: Any,
+) -> RetrievedExcerpt:
+    """Split an excerpt into sentences and return a ±2-sentence window around the best match."""
+    doc = nlp(excerpt.text)
+    if doc.has_annotation("SENT_START"):
+        sentences = [s.text.strip() for s in doc.sents if s.text.strip()]
+    else:
+        # Fallback: naive split on sentence-ending punctuation
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", excerpt.text) if s.strip()]
+
+    if len(sentences) <= 1:
+        return excerpt
+
+    best_idx = 0
+    best_score = -1
+    for i, sent in enumerate(sentences):
+        score = len(query_tokens & frozenset(_tokenize(sent)))
+        if score > best_score:
+            best_score = score
+            best_idx = i
+    # If no query terms matched any sentence (best_score == 0), best_idx stays at 0,
+    # returning the opening sentences — acceptable fallback.
+
+    window_start = max(0, best_idx - 1)
+    window_end = min(len(sentences), best_idx + 2)
+    window_text = " ".join(sentences[window_start:window_end])
+
+    return RetrievedExcerpt(
+        excerpt_id=excerpt.excerpt_id,
+        heading=excerpt.heading,
+        page_start=excerpt.page_start,
+        page_end=excerpt.page_end,
+        text=window_text,
+        score=excerpt.score,
+        token_estimate=max(1, estimate_tokens(window_text)),
+    )
+
+
+def _apply_sub_chunking(
+    excerpts: list[RetrievedExcerpt],
+    query: str,
+    nlp: Any,
+) -> list[RetrievedExcerpt]:
+    """Apply sentence-window sub-chunking to the given excerpts. Returns unchanged if nlp is None."""
+    if nlp is None:
+        return excerpts
+    query_tokens = frozenset(_tokenize(query))
+    return [_sub_chunk_excerpt(e, query_tokens, nlp) for e in excerpts]
+
+
 def retrieve_relevant_excerpts(
     document_text: str,
     latest_user_question: str,
@@ -1085,7 +1212,9 @@ def retrieve_relevant_excerpts(
     context_token_budget: int = DEFAULT_CONTEXT_TOKEN_BUDGET,
     document_id: str | None = None,
     persisted_chunks_path: str | Path | None = None,
-) -> tuple[list[RetrievedExcerpt], str]:
+    apply_sub_chunking: bool = True,
+) -> tuple[list[RetrievedExcerpt], list[RetrievedExcerpt], str]:
+    """Returns (final_excerpts, raw_top_N_before_subchunking, retrieval_mode)."""
     ranked_excerpts, retrieval_mode = retrieve_ranked_chunk_excerpts(
         document_text,
         latest_user_question,
@@ -1093,12 +1222,16 @@ def retrieve_relevant_excerpts(
         document_id=document_id,
         persisted_chunks_path=persisted_chunks_path,
     )
+    # Slice to the top-N finalists before sub-chunking so spaCy only processes ≤max_excerpts chunks
+    raw_top = ranked_excerpts[:max(1, max_excerpts)]
+    processed = _apply_sub_chunking(raw_top, latest_user_question, get_spacy_nlp()) if apply_sub_chunking else raw_top
     return (
         _budget_excerpt_selection(
-            ranked_excerpts,
+            processed,
             max_excerpts=max_excerpts,
             context_token_budget=context_token_budget,
         ),
+        raw_top,
         retrieval_mode,
     )
 
@@ -1152,8 +1285,9 @@ def build_chat_context_result(
     fallback_chars: int = DEFAULT_FALLBACK_CHARS,
     document_id: str | None = None,
     persisted_chunks_path: str | Path | None = None,
+    apply_sub_chunking: bool = True,
 ) -> ChatContextResult:
-    excerpts, retrieval_mode = retrieve_relevant_excerpts(
+    excerpts, raw_excerpts, retrieval_mode = retrieve_relevant_excerpts(
         document_text,
         latest_user_question,
         max_excerpts=max_excerpts,
@@ -1161,12 +1295,14 @@ def build_chat_context_result(
         context_token_budget=context_token_budget,
         document_id=document_id,
         persisted_chunks_path=persisted_chunks_path,
+        apply_sub_chunking=apply_sub_chunking,
     )
     if excerpts:
         return ChatContextResult(
             context=format_excerpt_context(excerpts),
             retrieval_mode=retrieval_mode,
             retrieved_excerpts=excerpts,
+            raw_retrieved_excerpts=raw_excerpts,
         )
 
     if persisted_chunks_path:
@@ -1215,6 +1351,8 @@ def build_chat_context_result_with_history(
     fallback_chars: int = DEFAULT_FALLBACK_CHARS,
     document_id: str | None = None,
     persisted_chunks_path: str | Path | None = None,
+    history_storage_dir: str | Path | None = None,
+    apply_sub_chunking: bool = True,
 ) -> ChatContextResult:
     normalized_mode = (chat_retrieval_mode or "chunks_only").strip().lower()
     if normalized_mode not in {"combined", "history_first", "chunks_only"}:
@@ -1231,12 +1369,14 @@ def build_chat_context_result_with_history(
             fallback_chars=fallback_chars,
             document_id=document_id,
             persisted_chunks_path=persisted_chunks_path,
+            apply_sub_chunking=apply_sub_chunking,
         )
         return ChatContextResult(
             context=base_result.context,
             retrieval_mode=base_result.retrieval_mode,
             retrieved_excerpts=base_result.retrieved_excerpts,
-            retrieved_chunk_candidates=base_result.retrieved_excerpts,
+            retrieved_chunk_candidates=base_result.raw_retrieved_excerpts,
+            raw_retrieved_excerpts=base_result.raw_retrieved_excerpts,
             final_candidate_mix=[_build_chunk_candidate(item) for item in base_result.retrieved_excerpts],
             chunk_retrieval_mode=base_result.retrieval_mode,
         )
@@ -1274,10 +1414,18 @@ def build_chat_context_result_with_history(
                     reused_answer=turn.assistant_answer,
                 )
 
+    _history_embeddings = None
+    if history_storage_dir is not None and document_id is not None:
+        try:
+            _history_embeddings = load_history_embeddings(document_id, history_storage_dir)
+        except Exception:
+            pass
+
     history_candidates = retrieve_relevant_history_turns(
         available_history_turns,
         latest_user_question,
         max_candidates=max(1, history_max_candidates),
+        history_embeddings=_history_embeddings,
     )
     history_top_score = history_candidates[0].score if history_candidates else None
 
@@ -1340,6 +1488,7 @@ def build_chat_context_result_with_history(
             fallback_chars=fallback_chars,
             document_id=document_id,
             persisted_chunks_path=persisted_chunks_path,
+            apply_sub_chunking=apply_sub_chunking,
         )
         return ChatContextResult(
             context=base_result.context,
@@ -1347,6 +1496,7 @@ def build_chat_context_result_with_history(
             retrieved_excerpts=base_result.retrieved_excerpts,
             retrieved_history=history_candidates[: max(1, history_max_candidates)],
             retrieved_chunk_candidates=chunk_candidates,
+            raw_retrieved_excerpts=base_result.raw_retrieved_excerpts,
             final_candidate_mix=[_build_chunk_candidate(item) for item in base_result.retrieved_excerpts],
             history_checked=True,
             history_reuse_hit=False,
@@ -1410,6 +1560,7 @@ def build_chat_context_result_with_history(
         fallback_chars=fallback_chars,
         document_id=document_id,
         persisted_chunks_path=persisted_chunks_path,
+        apply_sub_chunking=apply_sub_chunking,
     )
     return ChatContextResult(
         context=base_result.context,
@@ -1417,6 +1568,7 @@ def build_chat_context_result_with_history(
         retrieved_excerpts=base_result.retrieved_excerpts,
         retrieved_history=history_candidates[: max(1, history_max_candidates)],
         retrieved_chunk_candidates=chunk_candidates,
+        raw_retrieved_excerpts=base_result.raw_retrieved_excerpts,
         final_candidate_mix=[_build_chunk_candidate(item) for item in base_result.retrieved_excerpts],
         history_checked=True,
         history_reuse_hit=False,
