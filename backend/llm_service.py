@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import gc
+import json
 import os
 import re
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +67,7 @@ class LLMConfig:
     n_threads: int
     max_tokens: int
     temperature: float
+    use_chat_api: bool = False  # use create_chat_completion instead of raw completion
 
 
 @dataclass(frozen=True)
@@ -122,12 +126,41 @@ class LLMService:
         document_text: str,
         messages: list[dict[str, str]],
         max_history_messages: int,
+        title: str = "",
+        author: str = "",
     ) -> str:
         return self.generate_reply_with_debug(
             document_text=document_text,
             messages=messages,
             max_history_messages=max_history_messages,
+            title=title,
+            author=author,
         ).reply
+
+    def _run_chat_completion(
+        self,
+        llm: Llama,
+        messages: list[dict[str, str]],
+    ) -> tuple[str, float]:
+        """Call create_chat_completion and return (reply, inference_seconds)."""
+        t0 = time.perf_counter()
+        with self._inference_lock:
+            output = llm.create_chat_completion(
+                messages=messages,
+                max_tokens=self._config.max_tokens,
+                temperature=self._config.temperature,
+                top_p=0.9,
+                top_k=40,
+                min_p=0.05,
+                repeat_penalty=1.1,
+                stop=["\nQUESTION:", "\nCONVERSATION SO FAR:", "\nDOCUMENT EXCERPTS:"],
+            )
+        inference_seconds = time.perf_counter() - t0
+        reply = output["choices"][0]["message"]["content"].strip()
+        reply = re.sub(r"(?s)<think>.*?</think>\s*", "", reply).strip()
+        if not reply:
+            raise LLMServiceError("Model returned an empty response.")
+        return reply, inference_seconds
 
     def generate_reply_with_debug(
         self,
@@ -135,6 +168,8 @@ class LLMService:
         document_text: str,
         messages: list[dict[str, str]],
         max_history_messages: int,
+        title: str = "",
+        author: str = "",
     ) -> LLMInferenceResult:
         normalized_messages = self._normalize_messages(messages)
         if not normalized_messages:
@@ -144,12 +179,48 @@ class LLMService:
             raise LLMServiceError("Document text is empty.")
 
         llm = self._get_llm()
+
+        if self._config.use_chat_api:
+            latest_user_index = max(
+                (i for i, m in enumerate(normalized_messages) if m["role"] == "user"), default=-1
+            )
+            if latest_user_index < 0:
+                raise LLMServiceError("At least one user message is required.")
+            work_ref = f'"{title}" by {author}' if title else "this literary work"
+            history_start = max(0, latest_user_index - max(1, max_history_messages))
+            history = normalized_messages[history_start:latest_user_index]
+            latest_question = normalized_messages[latest_user_index]["content"]
+            chat_messages: list[dict[str, str]] = [
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are an IB Literature analyst answering questions about "
+                        f"{work_ref} using the provided document excerpts. "
+                        "Keep answers short and concise."
+                    ),
+                },
+                *history,
+                {
+                    "role": "user",
+                    "content": f"Document excerpts:\n{document_text.strip()}\n\nQuestion: {latest_question}",
+                },
+            ]
+            reply, inference_seconds = self._run_chat_completion(llm, chat_messages)
+            return LLMInferenceResult(
+                reply=reply,
+                final_prompt=json.dumps(chat_messages, ensure_ascii=False, indent=2),
+                prompt_build_seconds=0.0,
+                inference_seconds=inference_seconds,
+            )
+
         prompt_build_started = time.perf_counter()
         prompt = self._build_prompt_with_token_budget(
             llm=llm,
             document_context=document_text,
             messages=normalized_messages,
             max_history_messages=max_history_messages,
+            title=title,
+            author=author,
         )
         prompt_build_seconds = time.perf_counter() - prompt_build_started
 
@@ -161,7 +232,7 @@ class LLMService:
                 temperature=self._config.temperature,
                 top_p=0.9,
                 repeat_penalty=1.1,
-                stop=["\nUser:"],
+                stop=["\nQUESTION:", "\nCONVERSATION SO FAR:", "\nDOCUMENT EXCERPTS:"],
             )
         inference_seconds = time.perf_counter() - inference_started
 
@@ -226,7 +297,7 @@ class LLMService:
                 temperature=self._config.temperature,
                 top_p=0.9,
                 repeat_penalty=1.1,
-                stop=["\nUser:"],
+                stop=["\nQUESTION:", "\nCONVERSATION SO FAR:", "\nDOCUMENT EXCERPTS:"],
             )
         inference_seconds = time.perf_counter() - inference_started
         reply = output["choices"][0]["text"].strip()
@@ -254,7 +325,7 @@ class LLMService:
                 temperature=self._config.temperature,
                 top_p=0.9,
                 repeat_penalty=1.1,
-                stop=["\nUser:"],
+                stop=["\nQUESTION:", "\nCONVERSATION SO FAR:", "\nDOCUMENT EXCERPTS:"],
                 stream=True,
             )
             for chunk in stream:
@@ -274,6 +345,66 @@ class LLMService:
             inference_seconds=inference_seconds,
         )
 
+    def generate_base_knowledge_reply_with_debug(
+        self,
+        *,
+        title: str,
+        author: str,
+        session_messages: list[dict[str, str]],
+        question: str,
+    ) -> LLMInferenceResult:
+        """base_knowledge inference with token-budget history trimming."""
+        llm = self._get_llm()
+
+        if self._config.use_chat_api:
+            chat_messages: list[dict[str, str]] = [
+                {
+                    "role": "system",
+                    "content": (
+                        f'You are an IB Literature analyst answering questions about "{title}" '
+                        f"by {author}. Keep answers short and concise."
+                    ),
+                },
+                *list(session_messages),
+                {"role": "user", "content": question},
+            ]
+            reply, inference_seconds = self._run_chat_completion(llm, chat_messages)
+            return LLMInferenceResult(
+                reply=reply,
+                final_prompt=json.dumps(chat_messages, ensure_ascii=False, indent=2),
+                prompt_build_seconds=0.0,
+                inference_seconds=inference_seconds,
+            )
+
+        t0 = time.perf_counter()
+        prompt = self._build_base_knowledge_prompt_with_budget(
+            llm=llm, title=title, author=author,
+            session_messages=session_messages, question=question,
+        )
+        prompt_build_seconds = time.perf_counter() - t0
+
+        inference_started = time.perf_counter()
+        with self._inference_lock:
+            output = llm(
+                prompt,
+                max_tokens=self._config.max_tokens,
+                temperature=self._config.temperature,
+                top_p=0.9,
+                repeat_penalty=1.1,
+                stop=["\nQUESTION:", "\nCONVERSATION SO FAR:", "\nDOCUMENT EXCERPTS:"],
+            )
+        inference_seconds = time.perf_counter() - inference_started
+
+        reply = output["choices"][0]["text"].strip()
+        if not reply:
+            raise LLMServiceError("Model returned an empty response.")
+        return LLMInferenceResult(
+            reply=reply,
+            final_prompt=prompt,
+            prompt_build_seconds=prompt_build_seconds,
+            inference_seconds=inference_seconds,
+        )
+
     def _build_prompt_with_token_budget(
         self,
         *,
@@ -281,6 +412,8 @@ class LLMService:
         document_context: str,
         messages: list[dict[str, str]],
         max_history_messages: int,
+        title: str = "",
+        author: str = "",
     ) -> str:
         max_prompt_tokens = max(256, self._config.n_ctx - self._config.max_tokens - 32)
         context_text = document_context.strip()
@@ -289,6 +422,8 @@ class LLMService:
             document_text=context_text,
             messages=messages,
             max_history_messages=max_history_messages,
+            title=title,
+            author=author,
         )
         prompt_tokens = len(llm.tokenize(prompt.encode("utf-8")))
         if prompt_tokens <= max_prompt_tokens:
@@ -305,6 +440,8 @@ class LLMService:
                     document_text=trimmed_context,
                     messages=messages,
                     max_history_messages=max_history_messages,
+                    title=title,
+                    author=author,
                 )
                 prompt_tokens = len(llm.tokenize(prompt.encode("utf-8")))
                 if prompt_tokens <= max_prompt_tokens:
@@ -320,7 +457,45 @@ class LLMService:
             document_text=context_text,
             messages=messages,
             max_history_messages=max_history_messages,
+            title=title,
+            author=author,
         )
+
+    def _build_base_knowledge_prompt_with_budget(
+        self,
+        *,
+        llm: Llama,
+        title: str,
+        author: str,
+        session_messages: list[dict[str, str]],
+        question: str,
+    ) -> str:
+        max_prompt_tokens = max(256, self._config.n_ctx - self._config.max_tokens - 32)
+
+        def _build(msgs: list[dict[str, str]]) -> str:
+            history_lines = [
+                f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+                for m in msgs
+            ]
+            history = "\n".join(history_lines).strip() or "(none)"
+            return (
+                f"You are an IB Literature analyst answering a question about "
+                f'"{title}" by {author}. Keep answers short and concise.\n'
+                f"CONVERSATION SO FAR:\n{history}\n\n"
+                f"QUESTION:\n{question}\n\n"
+                "RESPONSE:"
+            )
+
+        msgs = list(session_messages)
+        prompt = _build(msgs)
+        prompt_tokens = len(llm.tokenize(prompt.encode("utf-8")))
+
+        while prompt_tokens > max_prompt_tokens and len(msgs) >= 2:
+            msgs = msgs[2:]
+            prompt = _build(msgs)
+            prompt_tokens = len(llm.tokenize(prompt.encode("utf-8")))
+
+        return prompt
 
     def generate_reply_stream(
         self,
@@ -328,6 +503,8 @@ class LLMService:
         document_text: str,
         messages: list[dict[str, str]],
         max_history_messages: int,
+        title: str = "",
+        author: str = "",
     ) -> Generator[str, None, LLMInferenceResult]:
         """Stream reply tokens one-by-one; the generator's return value is LLMInferenceResult.
 
@@ -353,6 +530,8 @@ class LLMService:
             document_context=document_text,
             messages=normalized_messages,
             max_history_messages=max_history_messages,
+            title=title,
+            author=author,
         )
         prompt_build_seconds = time.perf_counter() - prompt_build_started
 
@@ -365,7 +544,7 @@ class LLMService:
                 temperature=self._config.temperature,
                 top_p=0.9,
                 repeat_penalty=1.1,
-                stop=["\nUser:"],
+                stop=["\nQUESTION:", "\nCONVERSATION SO FAR:", "\nDOCUMENT EXCERPTS:"],
                 stream=True,
             )
             for chunk in stream:
@@ -432,6 +611,8 @@ class LLMService:
         document_text: str,
         messages: list[dict[str, str]],
         max_history_messages: int,
+        title: str = "",
+        author: str = "",
     ) -> str:
         latest_user_index = -1
         for idx in range(len(messages) - 1, -1, -1):
@@ -452,16 +633,14 @@ class LLMService:
         conversation_history = "\n".join(history_lines).strip() or "(none)"
         latest_user_message = messages[latest_user_index]["content"]
 
+        work_ref = f'"{title}" by {author}' if title else "this literary work"
         return (
-            "SYSTEM INSTRUCTIONS:\n"
-            "- You must answer referencing the DOCUMENT CONTEXT below.\n"
-            '- If the answer is not contained in the document, reply like this: "I could not find the exact answer, but based on the document " and give answer accordingly \n'
-          #  '- If the answer is not in the document, say so and provide what context you can. \n'
-           # "- Keep responses concise and factual.\n\n"
-            f"DOCUMENT CONTEXT:\n{document_text.strip()}\n\n"
-            f"RECENT CONVERSATION:\n{conversation_history}\n\n"
-            f"LATEST USER QUESTION:\nUser: {latest_user_message}\n"
-            "Assistant:"
+            f"You are an IB Literature analyst answering a question about "
+            f"{work_ref}, using the provided document excerpts. Keep answers short and concise.\n"
+            f"DOCUMENT EXCERPTS:\n{document_text.strip()}\n\n"
+            f"CONVERSATION SO FAR:\n{conversation_history}\n\n"
+            f"QUESTION:\n{latest_user_message}\n\n"
+            "RESPONSE:"
         )
 
     def _normalize_messages(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -484,11 +663,15 @@ class LLMService:
         with self._load_lock:
             if self._llm is None:
                 try:
+                    extra: dict = {}
+                    if self._config.use_chat_api:
+                        extra["chat_format"] = "chatml"
                     self._llm = Llama(
                         model_path=str(model_path),
                         n_ctx=self._config.n_ctx,
                         n_threads=self._config.n_threads,
                         verbose=False,
+                        **extra,
                     )
                 except Exception as exc:
                     raise LLMServiceError(f"Failed to load LLM model: {exc}") from exc
@@ -508,13 +691,268 @@ class LLMService:
         return resolved_path
 
 
+class RemoteLLMService:
+    """LLM service backed by an external OpenAI-compatible server (e.g. llama-server).
+
+    Sends requests to /v1/chat/completions using proper chat message format,
+    which is required for models like Qwen3.5 that use special chat templates.
+
+    Start the server separately (see llama.cpp / unsloth docs) before use.
+    """
+
+    def __init__(
+        self,
+        server_url: str,
+        model: str | None = None,
+        max_tokens: int = 640,
+        temperature: float = 0.6,
+    ):
+        self._server_url = server_url.rstrip("/")
+        self._model = model
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+
+    def is_chat_available(self) -> bool:
+        try:
+            req = urllib.request.Request(
+                f"{self._server_url}/models",
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    def unload(self) -> None:
+        """No-op: the remote server manages its own model lifecycle."""
+
+    def _chat_completions(self, messages: list[dict[str, str]]) -> dict:
+        payload: dict = {
+            "messages": messages,
+            "max_tokens": self._max_tokens,
+            "temperature": self._temperature,
+        }
+        if self._model:
+            payload["model"] = self._model
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self._server_url}/chat/completions",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise LLMServiceError(f"LLM server returned {exc.code}: {body}") from exc
+        except Exception as exc:
+            raise LLMServiceError(f"Failed to reach LLM server at {self._server_url}: {exc}") from exc
+
+    def _normalize(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:
+        out = []
+        for item in messages:
+            role = str(item.get("role", "")).strip().lower()
+            content = str(item.get("content", "")).strip()
+            if role not in {"user", "assistant"} or not content:
+                continue
+            out.append({"role": role, "content": content})
+        return out
+
+    def generate_reply_with_debug(
+        self,
+        *,
+        document_text: str,
+        messages: list[dict[str, str]],
+        max_history_messages: int,
+        title: str = "",
+        author: str = "",
+    ) -> LLMInferenceResult:
+        normalized = self._normalize(messages)
+        if not normalized:
+            raise LLMServiceError("At least one chat message is required.")
+        if not document_text or not document_text.strip():
+            raise LLMServiceError("Document text is empty.")
+
+        latest_user_index = max(
+            (i for i, m in enumerate(normalized) if m["role"] == "user"), default=-1
+        )
+        if latest_user_index < 0:
+            raise LLMServiceError("At least one user message is required.")
+
+        work_ref = f'"{title}" by {author}' if title else "this literary work"
+        system_msg = {
+            "role": "system",
+            "content": (
+                f"You are an IB Literature analyst answering questions about {work_ref} "
+                "using the provided document excerpts. Keep answers short and concise."
+            ),
+        }
+
+        history_start = max(0, latest_user_index - max(1, max_history_messages))
+        history = normalized[history_start:latest_user_index]
+
+        latest_question = normalized[latest_user_index]["content"]
+        user_msg = {
+            "role": "user",
+            "content": (
+                f"Document excerpts:\n{document_text.strip()}\n\nQuestion: {latest_question}"
+            ),
+        }
+
+        chat_messages = [system_msg] + history + [user_msg]
+
+        t0 = time.perf_counter()
+        response = self._chat_completions(chat_messages)
+        inference_seconds = time.perf_counter() - t0
+
+        reply = response["choices"][0]["message"]["content"].strip()
+        # Strip Qwen thinking blocks if present (<think>...</think>)
+        reply = re.sub(r"(?s)<think>.*?</think>\s*", "", reply).strip()
+        if not reply:
+            raise LLMServiceError("Model returned an empty response.")
+
+        return LLMInferenceResult(
+            reply=reply,
+            final_prompt=json.dumps(chat_messages, ensure_ascii=False, indent=2),
+            prompt_build_seconds=0.0,
+            inference_seconds=inference_seconds,
+        )
+
+    def generate_reply(
+        self,
+        *,
+        document_text: str,
+        messages: list[dict[str, str]],
+        max_history_messages: int,
+        title: str = "",
+        author: str = "",
+    ) -> str:
+        return self.generate_reply_with_debug(
+            document_text=document_text,
+            messages=messages,
+            max_history_messages=max_history_messages,
+            title=title,
+            author=author,
+        ).reply
+
+    def generate_base_knowledge_reply_with_debug(
+        self,
+        *,
+        title: str,
+        author: str,
+        session_messages: list[dict[str, str]],
+        question: str,
+    ) -> LLMInferenceResult:
+        system_msg = {
+            "role": "system",
+            "content": (
+                f'You are an IB Literature analyst answering questions about "{title}" '
+                f"by {author}. Keep answers short and concise."
+            ),
+        }
+        chat_messages = [system_msg] + list(session_messages) + [{"role": "user", "content": question}]
+
+        t0 = time.perf_counter()
+        response = self._chat_completions(chat_messages)
+        inference_seconds = time.perf_counter() - t0
+
+        reply = response["choices"][0]["message"]["content"].strip()
+        reply = re.sub(r"(?s)<think>.*?</think>\s*", "", reply).strip()
+        if not reply:
+            raise LLMServiceError("Model returned an empty response.")
+
+        return LLMInferenceResult(
+            reply=reply,
+            final_prompt=json.dumps(chat_messages, ensure_ascii=False, indent=2),
+            prompt_build_seconds=0.0,
+            inference_seconds=inference_seconds,
+        )
+
+    def generate_raw_reply(self, prompt: str) -> LLMInferenceResult:
+        t0 = time.perf_counter()
+        response = self._chat_completions([{"role": "user", "content": prompt}])
+        inference_seconds = time.perf_counter() - t0
+        reply = response["choices"][0]["message"]["content"].strip()
+        reply = re.sub(r"(?s)<think>.*?</think>\s*", "", reply).strip()
+        if not reply:
+            raise LLMServiceError("Model returned an empty response.")
+        return LLMInferenceResult(
+            reply=reply,
+            final_prompt=prompt,
+            prompt_build_seconds=0.0,
+            inference_seconds=inference_seconds,
+        )
+
+    def extract_title_and_author(self, text_sample: str) -> tuple[str, str]:
+        try:
+            messages = [
+                {
+                    "role": "user",
+                    "content": (
+                        "Identify the title and author of this literary work.\n"
+                        "Reply in exactly this format:\nTitle: <title>\nAuthor: <author>\n\n"
+                        f"Text:\n{text_sample.strip()}"
+                    ),
+                }
+            ]
+            response = self._chat_completions(messages)
+            raw = response["choices"][0]["message"]["content"].strip()
+            raw = re.sub(r"(?s)<think>.*?</think>\s*", "", raw).strip()
+            title_match = re.search(r"Title:\s*(.+)", raw)
+            author_match = re.search(r"Author:\s*(.+)", raw)
+            title = title_match.group(1).strip() if title_match else "Unknown"
+            author = author_match.group(1).strip() if author_match else "Unknown"
+            return (title or "Unknown", author or "Unknown")
+        except Exception:
+            return ("Unknown", "Unknown")
+
+    def estimate_context_token_budget(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        max_history_messages: int,
+    ) -> int:
+        # Remote server (llama.cpp) handles its own context window;
+        # return a generous budget so retrieval fetches enough context.
+        return 32_000
+
+    def generate_reply_stream(self, **kwargs) -> Generator[str, None, LLMInferenceResult]:
+        raise LLMServiceError(
+            "Streaming is not yet supported for the remote LLM server. "
+            "Use the non-streaming /api/chat endpoint instead."
+        )
+        yield  # make this a generator
+
+    def generate_raw_reply_stream(self, prompt: str) -> Generator[str, None, LLMInferenceResult]:
+        raise LLMServiceError(
+            "Streaming is not yet supported for the remote LLM server. "
+            "Use the non-streaming /api/chat endpoint instead."
+        )
+        yield  # make this a generator
+
+
 _service_instance: LLMService | None = None
 _service_instance_lock = threading.Lock()
 
 
-def get_llm_service() -> LLMService:
+def get_llm_service() -> LLMService | RemoteLLMService:
     global _service_instance
     with _service_instance_lock:
         if _service_instance is None:
-            _service_instance = LLMService()
+            server_url = os.getenv("LLM_SERVER_URL", "").strip()
+            if server_url:
+                server_model = os.getenv("LLM_SERVER_MODEL", "").strip() or None
+                max_tokens = _parse_int_env("LLM_MAX_TOKENS", 640, minimum=1)
+                temperature = _parse_float_env("LLM_TEMPERATURE", 0.6, minimum=0.0)
+                _service_instance = RemoteLLMService(
+                    server_url=server_url,
+                    model=server_model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+            else:
+                _service_instance = LLMService()
         return _service_instance

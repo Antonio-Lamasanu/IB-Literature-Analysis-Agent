@@ -1,0 +1,1210 @@
+[
+  {
+    "id": 1,
+    "question": "What is the socio-cultural background of the work?"
+  },
+  {
+    "id": 2,
+    "question": "What is the historical context in which the work has been written?"
+  },
+  {
+    "id": 3,
+    "question": "What are the main historical events from the time the author of the work you are reading lived?"
+  },
+  {
+    "id": 4,
+    "question": "What are the main events in the life of the author you are studying?"
+  },
+  {
+    "id": 5,
+    "question": "Can an author write successfully about a culture of which they are not a part of?"
+  },
+  {
+    "id": 6,
+    "question": "How is the cultural context of the work you are studying at the moment revealed?"
+  },
+  {
+    "id": 7,
+    "question": "Was this your experience with the work so far?"
+  },
+  {
+    "id": 8,
+    "question": "What is your experience with the work so far?"
+  },
+  {
+    "id": 9,
+    "question": "Have you heard about this author till now?"
+  },
+  {
+    "id": 10,
+    "question": "Have you heard about this book till now? In which context/circumstance?"
+  },
+  {
+    "id": 11,
+    "question": "Do you consider the work you are analysing now as effective in creating a new world in your mind? Why? What contributes to the creation of that world?"
+  },
+  {
+    "id": 12,
+    "question": "How does a work make its reader creative when it comes to exploring the possible different meanings of that work?"
+  },
+  {
+    "id": 13,
+    "question": "How many possible interpretations of the work are you reading or which of its elements can you find? Give me at least 2 examples of such interpretations."
+  },
+  {
+    "id": 14,
+    "question": "Write an alternative ending or part of the book you are reading that changes its interpretation, but that tries to replicate the author's style."
+  },
+  {
+    "id": 15,
+    "question": "Was this book difficult for you to understand?"
+  },
+  {
+    "id": 16,
+    "question": "Did you have to do research to fully understand this book?"
+  },
+  {
+    "id": 17,
+    "question": "Was this book revealing another meaning after a second reading?"
+  },
+  {
+    "id": 18,
+    "question": "What is the main aim of the work that you are studying? How do you know this?"
+  },
+  {
+    "id": 19,
+    "question": "Why do you think the author wrote this work?"
+  },
+  {
+    "id": 20,
+    "question": "How accessible is this work to you as a reader?"
+  },
+  {
+    "id": 21,
+    "question": "What might prevent a reader understanding this work?"
+  },
+  {
+    "id": 22,
+    "question": "Which character from this book do you really admire?"
+  },
+  {
+    "id": 23,
+    "question": "How far do you think it was the intention of the work to elicit this response in you?"
+  },
+  {
+    "id": 24,
+    "question": "Which are the main, secondary and episodic characters of this book?"
+  },
+  {
+    "id": 25,
+    "question": "Which characters represent some aspect of the author's identity?"
+  },
+  {
+    "id": 26,
+    "question": "Which characters do you find similar to your personality?"
+  },
+  {
+    "id": 27,
+    "question": "Which characters do you identify with?"
+  },
+  {
+    "id": 28,
+    "question": "To what extent have you identified with or felt challenged by the perspectives offered in the book?"
+  },
+  {
+    "id": 29,
+    "question": "Which issue has this book confirmed or deepened your views on?"
+  },
+  {
+    "id": 30,
+    "question": "How has this book confirmed or deepened your views?"
+  },
+  {
+    "id": 31,
+    "question": "How successfully has the book presented a particular point of view?"
+  },
+  {
+    "id": 32,
+    "question": "Which is the point of view presented by this book?"
+  },
+  {
+    "id": 33,
+    "question": "How similar is the world in the work you are reading to the real world?"
+  },
+  {
+    "id": 34,
+    "question": "How recognizable are the characters and their attitudes?"
+  },
+  {
+    "id": 35,
+    "question": "How much are the characters and their attitudes similar to real people?"
+  },
+  {
+    "id": 36,
+    "question": "In what ways does the use of language in the works you have read represent in itself a view of the world?"
+  },
+  {
+    "id": 37,
+    "question": "How has this book impacted the way you think about writing?"
+  },
+  {
+    "id": 38,
+    "question": "Which is the main topic of this book?"
+  },
+  {
+    "id": 39,
+    "question": "How has this book impacted the way you think about this topic?"
+  },
+  {
+    "id": 40,
+    "question": "How has this book impacted the way you think about reading?"
+  },
+  {
+    "id": 41,
+    "question": "What was it about the work that transformed your thinking?"
+  },
+  {
+    "id": 42,
+    "question": "What work from the ones you read till now has changed your thinking? What is being transformed: your views on reading, on writing or on an issue?"
+  },
+  {
+    "id": 43,
+    "question": "Compare two works that you have read in the course. How does comparing them change how you understand each work? How do the works seem different after this comparison?"
+  },
+  {
+    "id": 44,
+    "question": "What is the central idea or message of this work?"
+  },
+  {
+    "id": 45,
+    "question": "Which moments or passages affected you most, and why?"
+  },
+  {
+    "id": 46,
+    "question": "How has your understanding of the text changed since your first reading?"
+  },
+  {
+    "id": 47,
+    "question": "What were your first impressions of the text?"
+  },
+  {
+    "id": 48,
+    "question": "What questions did the text raise for you?"
+  },
+  {
+    "id": 49,
+    "question": "What possible interpretations can you already identify?"
+  },
+  {
+    "id": 50,
+    "question": "What do you need to research further?"
+  },
+  {
+    "id": 51,
+    "question": "Which quotations best support your interpretation?"
+  },
+  {
+    "id": 52,
+    "question": "How does this quotation connect to a theme, character, or stylistic feature?"
+  },
+  {
+    "id": 53,
+    "question": "What feedback have you received and how will you apply it?"
+  },
+  {
+    "id": 54,
+    "question": "What new skills or knowledge did you develop while studying this work?"
+  },
+  {
+    "id": 55,
+    "question": "What was difficult for you and how did you overcome it?"
+  },
+  {
+    "id": 56,
+    "question": "What strategies helped you improve your analysis or writing?"
+  },
+  {
+    "id": 57,
+    "question": "Which concept is most relevant to this work and why?"
+  },
+  {
+    "id": 58,
+    "question": "How does the text construct identity or represent culture?"
+  },
+  {
+    "id": 59,
+    "question": "How does the author use perspective to influence the reader?"
+  },
+  {
+    "id": 60,
+    "question": "Which literary devices are most important in this extract (e.g., symbolism, irony, narrative voice)?"
+  },
+  {
+    "id": 61,
+    "question": "How do these techniques contribute to meaning?"
+  },
+  {
+    "id": 62,
+    "question": "Can you explain this term clearly in your own words?"
+  },
+  {
+    "id": 63,
+    "question": "What exactly is the question asking you to do?"
+  },
+  {
+    "id": 64,
+    "question": "What evidence supports your analysis or evaluation?"
+  },
+  {
+    "id": 65,
+    "question": "How will you structure your response to meet the command term?"
+  },
+  {
+    "id": 66,
+    "question": "What is your main argument (thesis) about the text?"
+  },
+  {
+    "id": 67,
+    "question": "How do structure, language, and style support this argument?"
+  },
+  {
+    "id": 68,
+    "question": "Are there alternative interpretations you should address?"
+  },
+  {
+    "id": 69,
+    "question": "What global issue does this text engage with (power, inequality, identity, conflict, environment)?"
+  },
+  {
+    "id": 70,
+    "question": "How is this issue presented through characters or events?"
+  },
+  {
+    "id": 71,
+    "question": "Why is this issue relevant today?"
+  },
+  {
+    "id": 72,
+    "question": "What specific questions do you want feedback on?"
+  },
+  {
+    "id": 73,
+    "question": "Which part of your analysis are you least confident about?"
+  },
+  {
+    "id": 74,
+    "question": "How can you improve your argument based on your tutor's comments?"
+  },
+  {
+    "id": 75,
+    "question": "What was your biggest challenge in this task?"
+  },
+  {
+    "id": 76,
+    "question": "What progress are you most proud of?"
+  },
+  {
+    "id": 77,
+    "question": "What will you focus on improving next?"
+  },
+  {
+    "id": 78,
+    "question": "What social, historical, or cultural context influenced the author?"
+  },
+  {
+    "id": 79,
+    "question": "How might these conditions shape the characters and themes?"
+  },
+  {
+    "id": 80,
+    "question": "How would the text change if written in a different time period?"
+  },
+  {
+    "id": 81,
+    "question": "How might readers from different eras interpret this text differently?"
+  },
+  {
+    "id": 82,
+    "question": "What modern perspectives change the way we read this work today?"
+  },
+  {
+    "id": 83,
+    "question": "Why might this text remain relevant?"
+  },
+  {
+    "id": 84,
+    "question": "What would change if this text were written in another genre or medium?"
+  },
+  {
+    "id": 85,
+    "question": "How would meaning shift if the narrator or perspective changed?"
+  },
+  {
+    "id": 86,
+    "question": "What stylistic elements are essential to preserve the message?"
+  },
+  {
+    "id": 87,
+    "question": "How can you reinterpret the text creatively (monologue, diary entry, alternative ending)?"
+  },
+  {
+    "id": 88,
+    "question": "What themes or characters will you highlight in your response?"
+  },
+  {
+    "id": 89,
+    "question": "How does your creative response stay faithful to the original text?"
+  },
+  {
+    "id": 90,
+    "question": "How does language reflect social or cultural power in the text?"
+  },
+  {
+    "id": 91,
+    "question": "What cultural assumptions are present?"
+  },
+  {
+    "id": 92,
+    "question": "How does the author use language to shape meaning and tone?"
+  },
+  {
+    "id": 93,
+    "question": "How might the original audience have understood this text differently from modern readers?"
+  },
+  {
+    "id": 94,
+    "question": "Which historical or social changes could alter the interpretation of this work?"
+  },
+  {
+    "id": 95,
+    "question": "What themes might become more important today than at the time of publication?"
+  },
+  {
+    "id": 96,
+    "question": "How would readers from different generations respond emotionally or ethically to this text?"
+  },
+  {
+    "id": 97,
+    "question": "Why do you think this work continues (or does not continue) to be read and discussed?"
+  },
+  {
+    "id": 98,
+    "question": "What would change if this text were rewritten in another form (play → short story, novel → poem, prose → script)?"
+  },
+  {
+    "id": 99,
+    "question": "How would meaning shift if you changed the narrator, tense, or point of view?"
+  },
+  {
+    "id": 100,
+    "question": "What happens if the setting is modernized or relocated?"
+  },
+  {
+    "id": 101,
+    "question": "Which elements must remain unchanged to preserve the author's core message?"
+  },
+  {
+    "id": 102,
+    "question": "What transformation would best highlight the central theme?"
+  },
+  {
+    "id": 103,
+    "question": "Which character, moment, or conflict do you want to explore creatively?"
+  },
+  {
+    "id": 104,
+    "question": "How can you show understanding of the original text through your creative response?"
+  },
+  {
+    "id": 105,
+    "question": "What tone and style will you adopt to match or contrast the author's voice?"
+  },
+  {
+    "id": 106,
+    "question": "How does your creative piece reflect the themes or issues of the original work?"
+  },
+  {
+    "id": 107,
+    "question": "What new perspective does your response offer?"
+  },
+  {
+    "id": 108,
+    "question": "How might readers from different cultures interpret the characters or values differently?"
+  },
+  {
+    "id": 109,
+    "question": "What political or social perspectives could influence modern interpretations?"
+  },
+  {
+    "id": 110,
+    "question": "Which elements might be controversial or misunderstood today?"
+  },
+  {
+    "id": 111,
+    "question": "How could language barriers or translation affect meaning?"
+  },
+  {
+    "id": 112,
+    "question": "How would readers from marginalized or dominant groups respond differently?"
+  },
+  {
+    "id": 113,
+    "question": "What themes are shared between the two works? How are they treated differently?"
+  },
+  {
+    "id": 114,
+    "question": "How do the authors' stylistic choices shape meaning in each text?"
+  },
+  {
+    "id": 115,
+    "question": "What similarities or differences exist in narrative voice or perspective?"
+  },
+  {
+    "id": 116,
+    "question": "How does context influence the messages of each work?"
+  },
+  {
+    "id": 117,
+    "question": "How does the content and structure of the work make this character stand out among the others in the book?"
+  },
+  {
+    "id": 118,
+    "question": "What is the purpose of studying literature and what do we gain from it?"
+  },
+  {
+    "id": 119,
+    "question": "What skills, knowledge, or perspectives do you develop by studying this text?"
+  },
+  {
+    "id": 120,
+    "question": "How does analyzing language, structure, and context help you understand the text more deeply?"
+  },
+  {
+    "id": 121,
+    "question": "How do literary texts influence readers emotionally and intellectually?"
+  },
+  {
+    "id": 122,
+    "question": "How did this text affect your thoughts, emotions, or values?"
+  },
+  {
+    "id": 123,
+    "question": "How might different readers react differently to this same text?"
+  },
+  {
+    "id": 124,
+    "question": "How is meaning created and understood in a literary text?"
+  },
+  {
+    "id": 125,
+    "question": "What techniques does the author use to create meaning (language, imagery, symbolism, narration)?"
+  },
+  {
+    "id": 126,
+    "question": "How can readers interpret the same text in different ways?"
+  },
+  {
+    "id": 127,
+    "question": "How does language change depending on the type of text?"
+  },
+  {
+    "id": 128,
+    "question": "What language features are typical of this literary form (novel, play, poem, graphic text)?"
+  },
+  {
+    "id": 129,
+    "question": "How do these language choices shape the reader's experience?"
+  },
+  {
+    "id": 130,
+    "question": "How do the way a text is built and written influence its message?"
+  },
+  {
+    "id": 131,
+    "question": "How does the organization of the text (chapters, scenes, chronology) guide understanding?"
+  },
+  {
+    "id": 132,
+    "question": "How does the author's stylistic voice (tone, register, sentence structure) influence interpretation?"
+  },
+  {
+    "id": 133,
+    "question": "How do texts help us understand the world while also questioning our beliefs?"
+  },
+  {
+    "id": 134,
+    "question": "What new ideas, perspectives, or social issues does the text help you understand?"
+  },
+  {
+    "id": 135,
+    "question": "What aspects of the text challenge your assumptions, values, or comfort zone?"
+  },
+  {
+    "id": 136,
+    "question": "Do a poem and an informational text have different values to you as a reader?"
+  },
+  {
+    "id": 137,
+    "question": "Which text is more effective in communicating its ideas — and why?"
+  },
+  {
+    "id": 138,
+    "question": "What emotions or thoughts did this text make you feel or have?"
+  },
+  {
+    "id": 139,
+    "question": "How did this text change the way you think about real-world or global issues?"
+  },
+  {
+    "id": 140,
+    "question": "Did this text help you understand a character, situation, or problem differently? How?"
+  },
+  {
+    "id": 141,
+    "question": "Did the story make you reflect on issues outside the text (for example society, relationships, power, or identity)?"
+  },
+  {
+    "id": 142,
+    "question": "In what ways can this text be both enjoyable to read and useful for academic analysis?"
+  },
+  {
+    "id": 143,
+    "question": "What did you personally learn from reading this work?"
+  },
+  {
+    "id": 144,
+    "question": "How is reading a poem or story different from reading a news article about the same topic?"
+  },
+  {
+    "id": 145,
+    "question": "What does literature help you understand that factual texts may not?"
+  },
+  {
+    "id": 146,
+    "question": "What emotions or ideas does a literary text create compared to an informational text?"
+  },
+  {
+    "id": 147,
+    "question": "What special skills do you need to read and analyze a poem or novel (for example, noticing imagery or symbolism)?"
+  },
+  {
+    "id": 148,
+    "question": "Why might a literary text be valuable even if it does not give direct facts?"
+  },
+  {
+    "id": 149,
+    "question": "What personal value does this text have for you as a reader?"
+  },
+  {
+    "id": 150,
+    "question": "How do the form and structure of the text (for example layout, chapters, scenes, or patterns) help create meaning?"
+  },
+  {
+    "id": 151,
+    "question": "How do the author's language choices (imagery, word choice, symbols) shape what the text communicates?"
+  },
+  {
+    "id": 152,
+    "question": "Can the same text be understood in different ways? Why?"
+  },
+  {
+    "id": 153,
+    "question": "What is your own interpretation of this text? What evidence supports it?"
+  },
+  {
+    "id": 154,
+    "question": "How might critics or readers from the past or present interpret this text differently?"
+  },
+  {
+    "id": 155,
+    "question": "Do you think form and meaning can be separated, or are they always connected? Explain your idea."
+  },
+  {
+    "id": 156,
+    "question": "What are the typical features of this type of text (for example poem, play, novel, speech)?"
+  },
+  {
+    "id": 157,
+    "question": "Which stylistic or structural elements make this text clearly belong to this form?"
+  },
+  {
+    "id": 158,
+    "question": "How does the author use or adapt these conventions?"
+  },
+  {
+    "id": 159,
+    "question": "What differences do you notice when you compare this form to another literary form?"
+  },
+  {
+    "id": 160,
+    "question": "Has this type of text changed over time? If yes, how?"
+  },
+  {
+    "id": 161,
+    "question": "Do you think this form still follows traditional rules, or does it challenge them? Explain."
+  },
+  {
+    "id": 162,
+    "question": "How is the text organized (chapters, scenes, timeline)?"
+  },
+  {
+    "id": 163,
+    "question": "How does this structure help develop ideas, characters, or tension?"
+  },
+  {
+    "id": 164,
+    "question": "Why do you think the author chose this structure instead of another one?"
+  },
+  {
+    "id": 165,
+    "question": "How does the narrator's voice or point of view influence your understanding of the story?"
+  },
+  {
+    "id": 166,
+    "question": "What language choices (tone, imagery, description) shape how you imagine the setting or characters?"
+  },
+  {
+    "id": 167,
+    "question": "How would the meaning change if the structure or style were different?"
+  },
+  {
+    "id": 168,
+    "question": "What new ideas or perspectives did this text help you understand?"
+  },
+  {
+    "id": 169,
+    "question": "Did you identify with any character or situation? Why?"
+  },
+  {
+    "id": 170,
+    "question": "Did this text make you question your beliefs or assumptions? How?"
+  },
+  {
+    "id": 171,
+    "question": "What parts of the text were difficult, uncomfortable, or challenging to read?"
+  },
+  {
+    "id": 172,
+    "question": "How did these challenges help you think more deeply about the topic?"
+  },
+  {
+    "id": 173,
+    "question": "What does this text help you understand about the world or about yourself?"
+  },
+  {
+    "id": 174,
+    "question": "What kinds of things can literature teach us about people, society, or the world?"
+  },
+  {
+    "id": 175,
+    "question": "Why do you think literature is still important today?"
+  },
+  {
+    "id": 176,
+    "question": "What knowledge does this text give you (emotional, cultural, historical, moral)?"
+  },
+  {
+    "id": 177,
+    "question": "How is this type of knowledge different from what you learn in science or history?"
+  },
+  {
+    "id": 178,
+    "question": "Can different readers understand the same text in different ways? Why?"
+  },
+  {
+    "id": 179,
+    "question": "Do you think there is one \"correct\" interpretation or many valid ones? Explain."
+  },
+  {
+    "id": 180,
+    "question": "How does the author guide the reader's understanding through language and structure?"
+  },
+  {
+    "id": 181,
+    "question": "How does the reader's background influence how they understand the text?"
+  },
+  {
+    "id": 182,
+    "question": "What makes an interpretation strong or convincing?"
+  },
+  {
+    "id": 183,
+    "question": "Why is using evidence from the text important?"
+  },
+  {
+    "id": 184,
+    "question": "What differences do you notice between reading a text in the original language and in translation?"
+  },
+  {
+    "id": 185,
+    "question": "What meaning or effects might be lost or changed in translation?"
+  },
+  {
+    "id": 186,
+    "question": "Who do you think the text was originally written for?"
+  },
+  {
+    "id": 187,
+    "question": "What difficulties can modern readers face when reading this text?"
+  },
+  {
+    "id": 188,
+    "question": "How is reading a printed book different from reading online or watching a performance?"
+  },
+  {
+    "id": 189,
+    "question": "How does the format change your understanding or emotional response?"
+  },
+  {
+    "id": 190,
+    "question": "What types of evidence should you use to support your ideas (quotes, techniques, context)?"
+  },
+  {
+    "id": 191,
+    "question": "Why is explanation more important than just quoting?"
+  },
+  {
+    "id": 192,
+    "question": "Do literary forms (poems, plays, novels) restrict writers or help them create meaning?"
+  },
+  {
+    "id": 193,
+    "question": "How can authors break or adapt rules to create new effects?"
+  },
+  {
+    "id": 194,
+    "question": "What have you learned about literature by studying these texts?"
+  },
+  {
+    "id": 195,
+    "question": "Which ideas, themes, or messages from these works stayed with you most?"
+  },
+  {
+    "id": 196,
+    "question": "How could you use one of these works in a CAS project (for example reading promotion, workshops, performances, campaigns)?"
+  },
+  {
+    "id": 197,
+    "question": "Which CAS strand would this fit best: Creativity, Activity, or Service — and why?"
+  },
+  {
+    "id": 198,
+    "question": "Are these works available in your school or local library?"
+  },
+  {
+    "id": 199,
+    "question": "Are they accessible in other languages or formats?"
+  },
+  {
+    "id": 200,
+    "question": "Why might it be important to help others discover these texts or this author?"
+  },
+  {
+    "id": 201,
+    "question": "What social or global issues appear in this text?"
+  },
+  {
+    "id": 202,
+    "question": "How could you use this work to raise awareness about these issues?"
+  },
+  {
+    "id": 203,
+    "question": "Who would be the target audience for this project?"
+  },
+  {
+    "id": 204,
+    "question": "Could you adapt this text into a performance, reading event, or multimedia project?"
+  },
+  {
+    "id": 205,
+    "question": "What part of the text would be most powerful to present publicly?"
+  },
+  {
+    "id": 206,
+    "question": "What message would you want the audience to remember?"
+  },
+  {
+    "id": 207,
+    "question": "Is there injustice or inequality presented in the text?"
+  },
+  {
+    "id": 208,
+    "question": "Does this make you want to take action or support a cause? How?"
+  },
+  {
+    "id": 209,
+    "question": "What small, realistic action could you start with?"
+  },
+  {
+    "id": 210,
+    "question": "Why does the time and culture in which a text is written and read matter?"
+  },
+  {
+    "id": 211,
+    "question": "What historical or cultural factors influenced the author when writing this text?"
+  },
+  {
+    "id": 212,
+    "question": "How do these factors affect how readers understand the text today?"
+  },
+  {
+    "id": 213,
+    "question": "How should we approach texts that come from unfamiliar contexts?"
+  },
+  {
+    "id": 214,
+    "question": "What aspects of this text feel unfamiliar or different from your own culture or time?"
+  },
+  {
+    "id": 215,
+    "question": "What can you do to better understand these differences (research, context, discussion)?"
+  },
+  {
+    "id": 216,
+    "question": "How much can literature teach us about another culture?"
+  },
+  {
+    "id": 217,
+    "question": "What does this text reveal about the values, traditions, or social issues of its culture?"
+  },
+  {
+    "id": 218,
+    "question": "What might the text not show or represent fully?"
+  },
+  {
+    "id": 219,
+    "question": "How does a text's meaning or importance change as society changes?"
+  },
+  {
+    "id": 220,
+    "question": "How might readers in the past have understood this text differently from modern readers?"
+  },
+  {
+    "id": 221,
+    "question": "Which themes or ideas feel more important today, and why?"
+  },
+  {
+    "id": 222,
+    "question": "How do texts reflect and shape cultural traditions and behavior?"
+  },
+  {
+    "id": 223,
+    "question": "What cultural practices or social norms are shown in this text?"
+  },
+  {
+    "id": 224,
+    "question": "How might this text influence the way people think about these practices?"
+  },
+  {
+    "id": 225,
+    "question": "How does language show social groups and identities?"
+  },
+  {
+    "id": 226,
+    "question": "How does the author use language to show class, gender, power, or identity?"
+  },
+  {
+    "id": 227,
+    "question": "How do these language choices affect the reader's understanding of characters or society?"
+  },
+  {
+    "id": 228,
+    "question": "How important is knowing the background (time, place, culture) of a text for understanding its meaning?"
+  },
+  {
+    "id": 229,
+    "question": "How well can a modern reader understand a text that was written in a very different historical or cultural context?"
+  },
+  {
+    "id": 230,
+    "question": "What can readers from different cultures or time periods learn from a literary text?"
+  },
+  {
+    "id": 231,
+    "question": "Is what we learn about a culture from literature always accurate or reliable?"
+  },
+  {
+    "id": 232,
+    "question": "Can a literary text ever stop being relevant for certain readers or communities?"
+  },
+  {
+    "id": 233,
+    "question": "What reasons could be used to support this idea?"
+  },
+  {
+    "id": 234,
+    "question": "Is it fair or useful to analyze older texts using modern values and ideas?"
+  },
+  {
+    "id": 235,
+    "question": "What are the limits of doing this?"
+  },
+  {
+    "id": 236,
+    "question": "To what extent can literary texts be used as sources of historical information?"
+  },
+  {
+    "id": 237,
+    "question": "How can readers judge whether a translation is good quality?"
+  },
+  {
+    "id": 238,
+    "question": "Why might some translations be more effective than others?"
+  },
+  {
+    "id": 239,
+    "question": "How does the translator's time and cultural context influence the translation?"
+  },
+  {
+    "id": 240,
+    "question": "What problems or risks can occur when an author writes about a culture they do not belong to?"
+  },
+  {
+    "id": 241,
+    "question": "What can literature teach us about the beliefs, values, and traditions of a culture?"
+  },
+  {
+    "id": 242,
+    "question": "Can a literary text have a negative or harmful effect on its audience?"
+  },
+  {
+    "id": 243,
+    "question": "When, if ever, is censoring a literary text justified?"
+  },
+  {
+    "id": 244,
+    "question": "How does this text follow the usual rules of its literary form, and how does it break or change them?"
+  },
+  {
+    "id": 245,
+    "question": "How do literary rules and traditions change as society and culture change?"
+  },
+  {
+    "id": 246,
+    "question": "How can very different texts still share similar ideas, themes, or techniques?"
+  },
+  {
+    "id": 247,
+    "question": "What makes a literary text become a \"classic\"?"
+  },
+  {
+    "id": 248,
+    "question": "Do you think the idea of a \"classic\" is always fair or objective?"
+  },
+  {
+    "id": 249,
+    "question": "How can one text present different points of view about the same topic or theme?"
+  },
+  {
+    "id": 250,
+    "question": "How can comparing texts and interpreting them change the way you understand literature or the world?"
+  },
+  {
+    "id": 251,
+    "question": "Why might an author choose one literary form instead of another to communicate a specific message?"
+  },
+  {
+    "id": 252,
+    "question": "How does the chosen literary form help show character development or personal growth?"
+  },
+  {
+    "id": 253,
+    "question": "What effect does starting a story in the middle or end of a character's life have on the reader's understanding?"
+  },
+  {
+    "id": 254,
+    "question": "How does delayed revelation of information shape suspense or reader engagement?"
+  },
+  {
+    "id": 255,
+    "question": "What is the effect of using an unreliable narrator on the reader's trust and interpretation?"
+  },
+  {
+    "id": 256,
+    "question": "Why would an author intentionally create uncertainty for the reader?"
+  },
+  {
+    "id": 257,
+    "question": "How should readers deal with ambiguity or incomplete information in a text?"
+  },
+  {
+    "id": 258,
+    "question": "How do changing social values influence the way literary forms are adapted over time?"
+  },
+  {
+    "id": 259,
+    "question": "What similarities can you find between changes in literature and changes in other cultural forms (fashion, music, art)?"
+  },
+  {
+    "id": 260,
+    "question": "How do texts from the same literary form show gradual change across generations?"
+  },
+  {
+    "id": 261,
+    "question": "How can studying older and newer versions of the same genre help you understand literary evolution?"
+  },
+  {
+    "id": 262,
+    "question": "How can texts from very different cultures or time periods achieve the same overall purpose or message?"
+  },
+  {
+    "id": 263,
+    "question": "How can different literary techniques (imagery, dialogue, symbolism) lead to similar emotional or ideological effects?"
+  },
+  {
+    "id": 264,
+    "question": "What shared human experiences (for example love, loss, migration, identity) connect the texts you are studying?"
+  },
+  {
+    "id": 265,
+    "question": "How can different artistic methods produce similar reader responses?"
+  },
+  {
+    "id": 266,
+    "question": "What patterns of connection can you identify across your selected works?"
+  },
+  {
+    "id": 267,
+    "question": "Who decides which texts become \"classics\"?"
+  },
+  {
+    "id": 268,
+    "question": "What social, political, or cultural power structures influence which texts are valued?"
+  },
+  {
+    "id": 269,
+    "question": "Why might some authors or cultures be excluded from the literary canon?"
+  },
+  {
+    "id": 270,
+    "question": "How do definitions of \"classic\" differ across countries and cultures?"
+  },
+  {
+    "id": 271,
+    "question": "What personal criteria do you use to decide whether a text deserves classic status?"
+  },
+  {
+    "id": 272,
+    "question": "How do your reading choices reflect your understanding of literary value?"
+  },
+  {
+    "id": 273,
+    "question": "How does this text present different viewpoints on the same topic or conflict?"
+  },
+  {
+    "id": 274,
+    "question": "Which perspectives are given more importance or more space in the text? Why?"
+  },
+  {
+    "id": 275,
+    "question": "How do differences in age, gender, background, or identity shape the viewpoints shown?"
+  },
+  {
+    "id": 276,
+    "question": "Can opposing perspectives in the same text both be meaningful or valid? Why or why not?"
+  },
+  {
+    "id": 277,
+    "question": "What perspectives are missing or underrepresented in the text?"
+  },
+  {
+    "id": 278,
+    "question": "How does including multiple viewpoints deepen your understanding of the issue?"
+  },
+  {
+    "id": 279,
+    "question": "How has interpreting this text changed the way you think about its themes or characters?"
+  },
+  {
+    "id": 280,
+    "question": "How has comparing this text with another work changed your understanding of both texts?"
+  },
+  {
+    "id": 281,
+    "question": "How can reading inspire writers to reshape or recreate earlier texts?"
+  },
+  {
+    "id": 282,
+    "question": "How has rereading this text changed your interpretation over time?"
+  },
+  {
+    "id": 283,
+    "question": "How has engaging with this text influenced the way you see the world or your own position in it?"
+  },
+  {
+    "id": 284,
+    "question": "What new meanings have you created as a reader through interpretation?"
+  },
+  {
+    "id": 285,
+    "question": "Can reading literature help you develop ideas or knowledge that you did not have before? How?"
+  },
+  {
+    "id": 286,
+    "question": "What criteria do people use to judge whether a text has \"literary value\"?"
+  },
+  {
+    "id": 287,
+    "question": "Who has the authority to decide what counts as \"good literature\"?"
+  },
+  {
+    "id": 288,
+    "question": "How does placing a text into a genre or category influence how readers interpret it?"
+  },
+  {
+    "id": 289,
+    "question": "Can labeling a text limit or shape what readers notice or expect?"
+  },
+  {
+    "id": 290,
+    "question": "Does knowing literary rules and conventions make a text easier to understand, or can it sometimes confuse readers?"
+  },
+  {
+    "id": 291,
+    "question": "When might too much technical knowledge about literature reduce enjoyment or personal engagement?"
+  },
+  {
+    "id": 292,
+    "question": "What can you learn by comparing different translations of the same text?"
+  },
+  {
+    "id": 293,
+    "question": "How can adaptations (films, stage versions, rewrites) reveal new meanings in the original text?"
+  },
+  {
+    "id": 294,
+    "question": "Can transforming a text help clarify ideas that were unclear before?"
+  },
+  {
+    "id": 295,
+    "question": "How do reviews, critics, teachers, or classmates shape the way you understand a text?"
+  },
+  {
+    "id": 296,
+    "question": "Can popular opinion change the perceived meaning or value of a literary work?"
+  },
+  {
+    "id": 297,
+    "question": "What patterns or ideas become clearer when you read multiple works by the same author?"
+  },
+  {
+    "id": 298,
+    "question": "How can reading several texts by one writer deepen your understanding of their themes or style?"
+  },
+  {
+    "id": 299,
+    "question": "How does recognizing references to other texts change your understanding of a story?"
+  },
+  {
+    "id": 300,
+    "question": "What new insights can you gain by reading two texts that explore the same theme in different ways?"
+  },
+  {
+    "id": 301,
+    "question": "Which global issue is this book related to?"
+  },
+  {
+    "id": 302,
+    "question": "For the oral: In which ways the global issue of your choice is presented through the content and form of two of the works that you have studied?"
+  }
+]

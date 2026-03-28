@@ -1,23 +1,35 @@
 {
-  "document_id": "77a9ec97-0b2d-4255-b1cc-f2f7c430f9f5",
+  "document_ids": ["77a9ec97-0b2d-4255-b1cc-f2f7c430f9f5", "8e65416a-2192-400a-860d-07c761cfd222", "9b081459-cd45-410d-9cb9-c772ad8e3fca"],
   "models_folder": "C:\\Users\\yolom\\Desktop\\Internship Nedho\\GGUFs",
-  "models": [ 
-  "SmolLM2-135M-Instruct-Q4_K_M.gguf", 
-  "gemma-2-9b-it-Q4_K_M.gguf", 
-  "gemma-3-4b-it-Q4_K_M.gguf"
+  "models": [
+ 
+  "Qwen3.5-2B-Q4_K_M.gguf", 
+  "Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf", 
+  "Qwen3.5-9B-Q4_K_M.gguf", 
+  "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
+
   ],
 
-  "n_ctx_values": [2048],
+  "n_ctx_values": [4096],
   "n_threads": 8,
-  "max_tokens": 512,
-  "temperature": 0.2,
+  "max_tokens": 640,
+  "temperature": 0.4,
   "prompt_formats": ["base_knowledge", "rag", "rag_raw"],
   "questions": [
-    "How does the author use imagery in the opening chapter?",
-    "What is the central theme and how is it developed throughout the work?",
-    "Analyse the narrative voice of this work.",
-    "How does the narrative voice you described shift or evolve in the second half?",
-    "Based on everything discussed, what is the author's main message and how is it conveyed?"
+    "Which literary devices are most prominent in the opening of this work, and how do they establish meaning from the first pages?",
+    "What is the central tension or conflict in this work and how does the author develop it structurally?",
+    "How does the author use perspective and narrative choices to position the reader in relation to the characters and events?",
+    "How does this positioning shift or become complicated as the work progresses — and what does that shift reveal about the author's intentions?",
+    "Considering everything we have discussed, what is the work's main argument about the world, and how successfully does it make that argument?"
   ],
-  "output_dir": "outputs/benchmarks"
+  "output_dir": "outputs/benchmarks",
+  "learn_questions_path": "../useful/learn_questions.json",
+
+  "chat_models": ["Qwen"],
+
+  "server_url": null,
+  "server_models": [],
+  "server_interactive": false,
+  "server_max_tokens": 640,
+  "server_temperature": 0.6
 }

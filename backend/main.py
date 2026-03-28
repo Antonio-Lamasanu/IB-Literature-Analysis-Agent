@@ -118,11 +118,13 @@ def configure_app_logging() -> None:
 BASE_DIR = Path(__file__).resolve().parent
 UPLOADS_DIR = BASE_DIR / "uploads"
 OUTPUTS_DIR = BASE_DIR / "outputs"
+DOCUMENTS_DIR = OUTPUTS_DIR / "documents"
 DEFAULT_CHAT_HISTORY_STORAGE_DIR = OUTPUTS_DIR / "chat_history"
 DEFAULT_EXAM_HISTORY_STORAGE_DIR = OUTPUTS_DIR / "exam_history"
 DOCUMENTS_INDEX_PATH = OUTPUTS_DIR / "documents.index.json"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
 document_registry = DocumentRegistry(DOCUMENTS_INDEX_PATH)
 llm_service = get_llm_service()
 
@@ -588,8 +590,8 @@ def build_chunk_outputs(
         }
     )
 
-    chunks_path = OUTPUTS_DIR / f"{safe_stem}_{document_id}.chunks.jsonl"
-    meta_path = OUTPUTS_DIR / f"{safe_stem}_{document_id}.chunks.meta.json"
+    chunks_path = DOCUMENTS_DIR / f"{safe_stem}_{document_id}.chunks.jsonl"
+    meta_path = DOCUMENTS_DIR / f"{safe_stem}_{document_id}.chunks.meta.json"
     filtered_chunks_path: Path | None = None
 
     write_chunks_jsonl(chunks_path, chunks, include_raw=params.include_raw)
@@ -616,7 +618,7 @@ def build_chunk_outputs(
         logger.warning("Embedding generation failed (non-fatal): %s", _exc)
 
     if CHUNK_FILTER_FOR_EMBEDDING:
-        filtered_chunks_path = OUTPUTS_DIR / f"{safe_stem}_{document_id}.chunks.filtered.jsonl"
+        filtered_chunks_path = DOCUMENTS_DIR / f"{safe_stem}_{document_id}.chunks.filtered.jsonl"
         filtered_chunks = filter_chunks_for_embedding(
             chunks,
             min_tokens=CHUNK_EMBED_MIN_TOKENS,
@@ -715,7 +717,7 @@ async def process_pdf_endpoint(
 
     request_id = str(uuid.uuid4())
     upload_path = UPLOADS_DIR / f"{request_id}.pdf"
-    output_path = OUTPUTS_DIR / f"{request_id}.txt"
+    output_path = DOCUMENTS_DIR / f"{request_id}.txt"
 
     await save_upload_file(file, upload_path, MAX_UPLOAD_MB)
     try:
@@ -1103,6 +1105,8 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
                 document_text=context_result.context,
                 messages=messages,
                 max_history_messages=max(1, CHAT_MAX_HISTORY_MESSAGES),
+                title=record.title or "",
+                author=record.author or "",
             )
         except LLMDisabledError as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
@@ -1431,6 +1435,8 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
                         document_text=_context_result.context,
                         messages=_messages,
                         max_history_messages=max(1, CHAT_MAX_HISTORY_MESSAGES),
+                        title=_record.title or "",
+                        author=_record.author or "",
                     )
                     try:
                         while True:
@@ -1600,7 +1606,7 @@ async def process_pdf_chunks_endpoint(
 
     request_id = str(uuid.uuid4())
     upload_path = UPLOADS_DIR / f"{request_id}.pdf"
-    output_path = OUTPUTS_DIR / f"{request_id}.txt"
+    output_path = DOCUMENTS_DIR / f"{request_id}.txt"
 
     await save_upload_file(file, upload_path, MAX_UPLOAD_MB)
     try:

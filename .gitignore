@@ -74,6 +74,9 @@ Thumbs.db
 ehthumbs.db
 desktop.ini
 
+# ── Claude Code ───────────────────────────────────────────────
+.claude/settings.local.json
+
 # ── IDEs & editors ────────────────────────────────────────────
 .idea/
 .vscode/
