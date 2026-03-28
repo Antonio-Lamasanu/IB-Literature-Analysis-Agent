@@ -25,7 +25,12 @@ from chat_history import (
 )
 import exam_service
 from exam_service import GradingResult, grade_answer
-from exam_questions import PAPER1_PASSAGE, PAPER1_QUESTION, PAPER2_QUESTIONS
+from exam_questions import (
+    PAPER1_PASSAGE,
+    PAPER1_QUESTION,
+    PAPER2_QUESTIONS,
+    get_random_paper1_passage,
+)
 from exam_history import append_exam_attempt, create_exam_attempt
 from chunking import (
     CHUNK_SCHEMA_VERSION,
@@ -1691,6 +1696,7 @@ class SubmitAnswerRequest(BaseModel):
     student_answer: str = Field(..., min_length=1, max_length=8_000)
     document_ids: list[str] = Field(default_factory=list)
     context_mode: Literal["chunks", "titles_only"] = "chunks"
+    passage_text: str | None = Field(None, max_length=10_000)
 
 
 class ExamCriterionResult(BaseModel):
@@ -1768,8 +1774,9 @@ async def list_documents() -> list[DocumentSummary]:
 
 @app.get("/api/exam/paper1", response_model=Paper1ExamResponse)
 async def exam_get_paper1() -> Paper1ExamResponse:
-    """Return the hardcoded Paper 1 unseen passage and question."""
-    return Paper1ExamResponse(passage=PAPER1_PASSAGE, question=PAPER1_QUESTION)
+    """Return a randomly selected Paper 1 unseen passage and guiding question."""
+    entry = get_random_paper1_passage()
+    return Paper1ExamResponse(passage=entry["passage"], question=entry["guiding_question"])
 
 
 @app.get("/api/exam/paper2/questions", response_model=Paper2QuestionsResponse)
@@ -1788,7 +1795,7 @@ async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerRespon
                 paper_type="paper1",
                 question=payload.question,
                 student_answer=payload.student_answer,
-                passage_text=PAPER1_PASSAGE,
+                passage_text=payload.passage_text or PAPER1_PASSAGE,
             )
         except LLMDisabledError as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc

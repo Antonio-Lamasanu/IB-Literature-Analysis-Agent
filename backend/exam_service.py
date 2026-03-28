@@ -49,6 +49,8 @@ CRITERIA_BY_PAPER: dict[str, list[tuple[str, str, int]]] = {
     ],
 }
 
+# TODO: IB PDF cover shows 30 marks but the 4-criteria breakdown here sums to 40.
+# Verify correct per-criterion weights (SL vs HL) before changing.
 MAX_SCORE_BY_PAPER: dict[str, int] = {"paper1": 20, "paper2": 40}
 
 _PAPER_LABEL: dict[str, str] = {
@@ -140,30 +142,82 @@ def retrieve_multi_doc_context(chunks_paths: list[str | Path], paper_type: str) 
     return "\n\n".join(parts)
 
 
-def _build_grading_user_msg(question: str, student_answer: str, paper_type: str) -> str:
+def _build_output_template(paper_type: str) -> str:
+    criteria = CRITERIA_BY_PAPER[paper_type]
+    blocks = "\n\n".join(
+        f"[Criterion {letter}]\nScore: N/{max_score}\nFeedback: <1\u20133 sentences>"
+        for letter, _label, max_score in criteria
+    )
+    return blocks + "\n\n[Overall]\nComments: <2\u20134 sentences>"
+
+
+def _build_criteria_lines(paper_type: str) -> str:
     criteria = CRITERIA_BY_PAPER[paper_type]
     descriptions = _CRITERIA_DESCRIPTIONS[paper_type]
-    paper_label = _PAPER_LABEL[paper_type]
-
-    criteria_lines = "\n".join(
+    return "\n".join(
         f"  {letter} \u2013 {label} ({max_score}): {descriptions[letter]}"
         for letter, label, max_score in criteria
     )
 
-    # Build the expected output template with correct max scores
-    output_blocks = "\n\n".join(
-        f"[Criterion {letter}]\nScore: N/{max_score}\nFeedback: <1\u20133 sentences>"
-        for letter, _label, max_score in criteria
+
+def _build_paper1_grading_prompt(
+    passage: str,
+    guiding_question: str,
+    student_answer: str,
+) -> str:
+    """Build a self-contained grading prompt for Paper 1.
+
+    The unseen passage and guiding question are embedded directly so context and
+    instructions are physically adjacent in the token stream.
+    """
+    return (
+        "You are an IB Literature examiner grading a Paper 1 guided literary analysis.\n"
+        "The following is an IB specimen marking scheme. These are marking notes, not an\n"
+        "exhaustive checklist \u2014 alternative formal or technical approaches that demonstrate\n"
+        "the same skills should also be rewarded.\n\n"
+        "Output each criterion block in this exact format, then the Overall block:\n\n"
+        f"{_build_output_template('paper1')}\n\n"
+        f"IB CRITERIA (Paper 1):\n{_build_criteria_lines('paper1')}\n\n"
+        f"UNSEEN PASSAGE:\n{passage}\n\n"
+        f"GUIDING QUESTION:\n{guiding_question}\n\n"
+        f"STUDENT ANSWER:\n{student_answer}"
     )
 
+
+def _build_paper2_grading_prompt(
+    question: str,
+    student_answer: str,
+    context_mode: str,
+    context_text: str,
+) -> str:
+    """Build a self-contained grading prompt for Paper 2.
+
+    Context (titles or excerpts) is embedded inline so it is physically adjacent
+    to the grading instructions in the token stream.
+    """
+    if context_mode == "titles_only":
+        context_header = (
+            "The student cannot bring copies of the works into the exam.\n"
+            "Draw on your own knowledge of the works listed below to evaluate\n"
+            "the student\u2019s textual references and interpretations.\n\n"
+            f"WORKS:\n{context_text}"
+        )
+    else:
+        context_header = (
+            "The student cannot bring copies of the works into the exam.\n"
+            "The excerpts below are passages from the studied works. Use them to\n"
+            "verify the accuracy of the student\u2019s textual references.\n\n"
+            f"EXCERPTS FROM STUDIED WORKS:\n{context_text}"
+        )
+
     return (
-        f"You are an IB Literature examiner. Grade the student's response strictly using the\n"
-        f"four criteria below. Output each block in this exact format:\n\n"
-        f"{output_blocks}\n\n"
-        f"[Overall]\n"
-        f"Comments: <2\u20134 sentences>\n\n"
-        f"IB CRITERIA ({paper_label}):\n"
-        f"{criteria_lines}\n\n"
+        "You are an IB Literature examiner grading a Paper 2 comparative essay.\n"
+        "The following is an IB specimen marking scheme. These are marking notes, not an\n"
+        "exhaustive checklist \u2014 alternative formal or technical approaches should also be rewarded.\n\n"
+        f"{context_header}\n\n"
+        "Output each criterion block in this exact format, then the Overall block:\n\n"
+        f"{_build_output_template('paper2')}\n\n"
+        f"IB CRITERIA (Paper 2):\n{_build_criteria_lines('paper2')}\n\n"
         f"EXAM QUESTION:\n{question}\n\n"
         f"STUDENT ANSWER:\n{student_answer}"
     )
@@ -267,21 +321,21 @@ def grade_answer(
     _validate_paper_type(paper_type)
 
     if paper_type == "paper1":
-        context_text = passage_text or ""
-    elif context_mode == "titles_only":
-        lines = [f"Work {i + 1}: {t}" for i, t in enumerate(doc_titles or [])]
-        context_text = "\n".join(lines) if lines else "(no work information provided)"
+        prompt = _build_paper1_grading_prompt(
+            passage=passage_text or "",
+            guiding_question=question,
+            student_answer=student_answer,
+        )
     else:
-        context_text = retrieve_multi_doc_context(chunks_paths or [], paper_type)
-
-    grading_msg = _build_grading_user_msg(question, student_answer, paper_type)
+        if context_mode == "titles_only":
+            lines = [f"Work {i + 1}: {t}" for i, t in enumerate(doc_titles or [])]
+            context_text = "\n".join(lines) if lines else "(no work information provided)"
+        else:
+            context_text = retrieve_multi_doc_context(chunks_paths or [], paper_type)
+        prompt = _build_paper2_grading_prompt(question, student_answer, context_mode, context_text)
 
     t0 = time.perf_counter()
-    result = get_llm_service().generate_reply_with_debug(
-        document_text=context_text,
-        messages=[{"role": "user", "content": grading_msg}],
-        max_history_messages=0,
-    )
+    result = get_llm_service().generate_raw_reply(prompt)
     inference_seconds = time.perf_counter() - t0
 
-    return _parse_grading_output(result.reply, paper_type, context_mode, inference_seconds, grading_msg)
+    return _parse_grading_output(result.reply, paper_type, context_mode, inference_seconds, prompt)

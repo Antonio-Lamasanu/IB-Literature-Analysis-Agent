@@ -1,9 +1,16 @@
 """Static question database for Exam Mode.
 
-Paper 1: one unseen passage + one fixed question.
+Paper 1: passages loaded from useful/paper1_sub.json at runtime (with legacy
+         hardcoded fallbacks kept for backwards compatibility).
 Paper 2: three questions; one is randomly selected per session.
 """
 from __future__ import annotations
+
+import json
+import random
+from pathlib import Path
+
+_PAPER1_JSON = Path(__file__).resolve().parents[1] / "useful" / "paper1_sub.json"
 
 PAPER1_PASSAGE = (
     "The streetlight flickered again.\n"
@@ -27,6 +34,20 @@ PAPER1_QUESTION = (
     "Analyze how the writer uses stylistic and structural features to convey "
     "Mara\u2019s psychological state."
 )
+
+def load_paper1_passages() -> list[dict]:
+    """Return all entries from useful/paper1_sub.json.
+
+    Each entry has keys: title, author, year, passage, guiding_question.
+    """
+    with _PAPER1_JSON.open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def get_random_paper1_passage() -> dict:
+    """Return a randomly selected passage entry from paper1_sub.json."""
+    return random.choice(load_paper1_passages())
+
 
 PAPER2_QUESTIONS: list[dict] = [
     {
