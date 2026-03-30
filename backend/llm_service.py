@@ -76,6 +76,15 @@ class LLMInferenceResult:
     final_prompt: str
     prompt_build_seconds: float
     inference_seconds: float
+    history_turns_dropped: int = 0
+    context_trimmed: bool = False
+
+
+@dataclass
+class _PromptBuildResult:
+    prompt: str
+    turns_dropped: int
+    context_trimmed: bool
 
 
 EXCERPT_BLOCK_RE = re.compile(r"(?ms)^\[(?:Excerpt|History Match) .*?(?=^\[(?:Excerpt|History Match) |\Z)")
@@ -345,6 +354,58 @@ class LLMService:
             inference_seconds=inference_seconds,
         )
 
+    def generate_feedback_stream(self, prompt: str) -> Generator[str, None, "LLMInferenceResult"]:
+        """Stream tokens for a feedback prompt with no stop tokens.
+
+        Unlike generate_raw_reply_stream, this passes stop=[] so chat-specific stop
+        sequences cannot truncate mid-sentence feedback output.
+        """
+        llm = self._get_llm()
+        inference_started = time.perf_counter()
+        tokens: list[str] = []
+        with self._inference_lock:
+            stream = llm(
+                prompt,
+                max_tokens=self._config.max_tokens,
+                temperature=self._config.temperature,
+                top_p=0.9,
+                repeat_penalty=1.1,
+                stop=[],
+                stream=True,
+            )
+            for chunk in stream:
+                token = chunk["choices"][0]["text"]
+                if token:
+                    tokens.append(token)
+                    yield token
+
+        inference_seconds = time.perf_counter() - inference_started
+        full_reply = "".join(tokens).strip()
+        if not full_reply:
+            raise LLMServiceError("Model returned an empty response.")
+        return LLMInferenceResult(
+            reply=full_reply,
+            final_prompt=prompt,
+            prompt_build_seconds=0.0,
+            inference_seconds=inference_seconds,
+        )
+
+    def count_tokens(self, text: str) -> int:
+        """Return exact token count via the loaded model's tokenizer.
+
+        Falls back to words × 1.33 estimate if the model is not yet loaded.
+        """
+        if self._llm is None:
+            return max(1, int(len(text.split()) * 1.33))
+        try:
+            return len(self._llm.tokenize(text.encode("utf-8")))
+        except Exception:
+            return max(1, int(len(text.split()) * 1.33))
+
+    def get_context_window_size(self) -> int:
+        """Return the configured context window size (n_ctx)."""
+        return self._config.n_ctx
+
     def generate_base_knowledge_reply_with_debug(
         self,
         *,
@@ -377,7 +438,7 @@ class LLMService:
             )
 
         t0 = time.perf_counter()
-        prompt = self._build_base_knowledge_prompt_with_budget(
+        build_result = self._build_base_knowledge_prompt_with_budget(
             llm=llm, title=title, author=author,
             session_messages=session_messages, question=question,
         )
@@ -386,7 +447,7 @@ class LLMService:
         inference_started = time.perf_counter()
         with self._inference_lock:
             output = llm(
-                prompt,
+                build_result.prompt,
                 max_tokens=self._config.max_tokens,
                 temperature=self._config.temperature,
                 top_p=0.9,
@@ -400,9 +461,11 @@ class LLMService:
             raise LLMServiceError("Model returned an empty response.")
         return LLMInferenceResult(
             reply=reply,
-            final_prompt=prompt,
+            final_prompt=build_result.prompt,
             prompt_build_seconds=prompt_build_seconds,
             inference_seconds=inference_seconds,
+            history_turns_dropped=build_result.turns_dropped,
+            context_trimmed=build_result.context_trimmed,
         )
 
     def _build_prompt_with_token_budget(
@@ -469,7 +532,7 @@ class LLMService:
         author: str,
         session_messages: list[dict[str, str]],
         question: str,
-    ) -> str:
+    ) -> _PromptBuildResult:
         max_prompt_tokens = max(256, self._config.n_ctx - self._config.max_tokens - 32)
 
         def _build(msgs: list[dict[str, str]]) -> str:
@@ -490,12 +553,17 @@ class LLMService:
         prompt = _build(msgs)
         prompt_tokens = len(llm.tokenize(prompt.encode("utf-8")))
 
+        original_count = len(msgs)
         while prompt_tokens > max_prompt_tokens and len(msgs) >= 2:
             msgs = msgs[2:]
             prompt = _build(msgs)
             prompt_tokens = len(llm.tokenize(prompt.encode("utf-8")))
 
-        return prompt
+        turns_dropped = (original_count - len(msgs)) // 2
+        # context_trimmed is True if pairs were dropped OR the prompt still overflows
+        # (edge case: a single pair longer than the entire budget — loop exits unresolved)
+        context_trimmed = turns_dropped > 0 or prompt_tokens > max_prompt_tokens
+        return _PromptBuildResult(prompt=prompt, turns_dropped=turns_dropped, context_trimmed=context_trimmed)
 
     def generate_reply_stream(
         self,
@@ -706,11 +774,13 @@ class RemoteLLMService:
         model: str | None = None,
         max_tokens: int = 640,
         temperature: float = 0.6,
+        n_ctx: int = 10000,
     ):
         self._server_url = server_url.rstrip("/")
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
+        self._n_ctx = n_ctx
 
     def is_chat_available(self) -> bool:
         try:
@@ -932,6 +1002,21 @@ class RemoteLLMService:
             "Use the non-streaming /api/chat endpoint instead."
         )
         yield  # make this a generator
+
+    def generate_feedback_stream(self, prompt: str) -> Generator[str, None, LLMInferenceResult]:
+        raise LLMServiceError(
+            "Streaming is not yet supported for the remote LLM server. "
+            "Use the non-streaming /api/chat endpoint instead."
+        )
+        yield  # make this a generator
+
+    def count_tokens(self, text: str) -> int:
+        """Estimate token count using words × 1.33 (no local tokenizer available)."""
+        return max(1, int(len(text.split()) * 1.33))
+
+    def get_context_window_size(self) -> int:
+        """Return the configured context window size."""
+        return self._n_ctx
 
 
 _service_instance: LLMService | None = None

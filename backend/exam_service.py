@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 
 from llm_service import (
     LLMDisabledError,
+    LLMInferenceResult,
     LLMNotConfiguredError,
     LLMServiceError,
     get_llm_service,
@@ -142,10 +144,26 @@ def retrieve_multi_doc_context(chunks_paths: list[str | Path], paper_type: str) 
     return "\n\n".join(parts)
 
 
+_FEEDBACK_COACHING: dict[str, dict[str, str]] = {
+    "paper1": {
+        "A": "the student's interpretation of the passage's meaning, themes, and literary context",
+        "B": "identification and analysis of specific literary techniques and their effects",
+        "C": "clarity and coherence of argument structure and essay organisation",
+        "D": "use of precise, accurate literary language and register",
+    },
+    "paper2": {
+        "A": "knowledge and understanding of both works, and the quality of interpretation",
+        "B": "comparative analysis of literary features across both works",
+        "C": "essay structure, development of a sustained comparative argument",
+        "D": "use of precise, accurate literary language and formal register",
+    },
+}
+
+
 def _build_output_template(paper_type: str) -> str:
     criteria = CRITERIA_BY_PAPER[paper_type]
     blocks = "\n\n".join(
-        f"[Criterion {letter}]\nScore: N/{max_score}\nFeedback: <1\u20133 sentences>"
+        f"[Criterion {letter}]\nScore: N/{max_score}\nFeedback: <one sentence>"
         for letter, _label, max_score in criteria
     )
     return blocks + "\n\n[Overall]\nComments: <2\u20134 sentences>"
@@ -339,3 +357,116 @@ def grade_answer(
     inference_seconds = time.perf_counter() - t0
 
     return _parse_grading_output(result.reply, paper_type, context_mode, inference_seconds, prompt)
+
+
+# --------------------------------------------------------------------------- #
+# Per-criterion streaming feedback                                             #
+# --------------------------------------------------------------------------- #
+
+def _build_criterion_feedback_prompt(
+    *,
+    paper_type: str,
+    criterion: str,
+    criterion_label: str,
+    score: int,
+    max_score: int,
+    student_answer: str,
+    passage_text: str | None,
+    context_text: str | None,
+    question: str | None,
+) -> str:
+    coaching = _FEEDBACK_COACHING[paper_type][criterion]
+    lines = [
+        "You are an IB Literature coach providing detailed feedback on ONE criterion only.",
+        "",
+        f"CRITERION {criterion} \u2014 {criterion_label} ({score}/{max_score})",
+        f"Focus area: {coaching}",
+        "",
+        "TASK:",
+        "Write 3-5 sentences of specific, actionable coaching feedback. You must:",
+        '1. Quote at least one short phrase from the student\'s answer (use "quotation marks")',
+        "2. Explain what the student did well or poorly on this specific criterion",
+        "3. Give one concrete suggestion for improvement",
+        "Do NOT re-score. Do NOT comment on other criteria.",
+    ]
+
+    if paper_type == "paper1" and passage_text:
+        lines += ["", "UNSEEN PASSAGE:", passage_text]
+    elif paper_type == "paper2" and context_text:
+        lines += ["", "RELEVANT EXCERPTS FROM STUDIED WORKS:", context_text]
+    elif paper_type == "paper2":
+        lines += [
+            "",
+            "NOTE: No source text is available. The student did not bring texts into the exam.",
+            "Ground your feedback entirely in the student's own references and quotations within their answer.",
+            "If the student has not quoted or referenced specific passages, note this as a weakness.",
+        ]
+
+    if question:
+        lines += ["", "EXAM QUESTION:", question]
+
+    lines += ["", "STUDENT ANSWER:", student_answer, "", f"FEEDBACK FOR CRITERION {criterion}:"]
+    return "\n".join(lines)
+
+
+def estimate_feedback_prompt_tokens(
+    *,
+    paper_type: str,
+    criterion: str,
+    criterion_label: str,
+    score: int,
+    max_score: int,
+    student_answer: str,
+    passage_text: str | None = None,
+    context_text: str | None = None,
+    question: str | None = None,
+) -> int:
+    """Return token count for the criterion feedback prompt.
+
+    Uses the model's tokenizer for an exact count when a local model is loaded;
+    falls back to words × 1.33 otherwise.
+    """
+    prompt = _build_criterion_feedback_prompt(
+        paper_type=paper_type,
+        criterion=criterion,
+        criterion_label=criterion_label,
+        score=score,
+        max_score=max_score,
+        student_answer=student_answer,
+        passage_text=passage_text,
+        context_text=context_text,
+        question=question,
+    )
+    return get_llm_service().count_tokens(prompt)
+
+
+def stream_criterion_feedback(
+    *,
+    paper_type: str,
+    criterion: str,
+    criterion_label: str,
+    score: int,
+    max_score: int,
+    student_answer: str,
+    passage_text: str | None = None,
+    context_text: str | None = None,
+    question: str | None = None,
+) -> Generator[str, None, LLMInferenceResult]:
+    """Stream detailed coaching feedback for a single IB criterion.
+
+    Yields tokens one by one. Raises StopIteration with an LLMInferenceResult
+    as .value when complete. Uses generate_feedback_stream (no stop tokens).
+    """
+    _validate_paper_type(paper_type)
+    prompt = _build_criterion_feedback_prompt(
+        paper_type=paper_type,
+        criterion=criterion,
+        criterion_label=criterion_label,
+        score=score,
+        max_score=max_score,
+        student_answer=student_answer,
+        passage_text=passage_text,
+        context_text=context_text,
+        question=question,
+    )
+    return (yield from get_llm_service().generate_feedback_stream(prompt))

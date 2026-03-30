@@ -523,23 +523,30 @@ def run_benchmark(config_path: Path) -> None:  # noqa: C901
             gc.collect()
         _clear_service()
 
-    # ---- Local GGUF models ----
-    for model_path in model_paths:
-        model_name = model_path.name
-        for n_ctx in n_ctx_values:
-            log.info("\n>>> MODEL: %s  n_ctx=%d", model_name, n_ctx)
-            _run_for_model(model_name, n_ctx, is_server=False)
+    try:
+        # ---- Local GGUF models ----
+        for model_path in model_paths:
+            model_name = model_path.name
+            for n_ctx in n_ctx_values:
+                log.info("\n>>> MODEL: %s  n_ctx=%d", model_name, n_ctx)
+                _run_for_model(model_name, n_ctx, is_server=False)
 
-    # ---- Server models ----
-    if server_model_pairs:
-        for server_url, model_alias in server_model_pairs:
-            log.info("\n>>> SERVER MODEL: %s  (%s)", model_alias, server_url)
-            _run_for_model(model_alias, 0, is_server=True, server_url=server_url)
+        # ---- Server models ----
+        if server_model_pairs:
+            for server_url, model_alias in server_model_pairs:
+                log.info("\n>>> SERVER MODEL: %s  (%s)", model_alias, server_url)
+                _run_for_model(model_alias, 0, is_server=True, server_url=server_url)
 
-    _write_report(out_dir / "report.txt", all_records)
-    log.info("\nExam benchmark complete.")
-    log.info("Results : %s", jsonl_file)
-    log.info("Report  : %s", out_dir / "report.txt")
+        log.info("\nExam benchmark complete.")
+    except KeyboardInterrupt:
+        log.info("\nBenchmark interrupted — writing partial report.")
+    finally:
+        if all_records:
+            _write_report(out_dir / "report.txt", all_records)
+            log.info("Results : %s", jsonl_file)
+            log.info("Report  : %s", out_dir / "report.txt")
+        else:
+            log.info("No records collected — report not written.")
 
 
 # ---------------------------------------------------------------------------

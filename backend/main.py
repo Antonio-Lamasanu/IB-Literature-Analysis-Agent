@@ -24,12 +24,19 @@ from chat_history import (
     load_chat_history,
 )
 import exam_service
-from exam_service import GradingResult, grade_answer
+from exam_service import (
+    CRITERIA_BY_PAPER,
+    GradingResult,
+    estimate_feedback_prompt_tokens,
+    grade_answer,
+    retrieve_multi_doc_context,
+    stream_criterion_feedback,
+)
 from exam_questions import (
     PAPER1_PASSAGE,
     PAPER1_QUESTION,
-    PAPER2_QUESTIONS,
     get_random_paper1_passage,
+    load_paper2_questions,
 )
 from exam_history import append_exam_attempt, create_exam_attempt
 from chunking import (
@@ -1711,6 +1718,7 @@ class ExamDebugInfo(BaseModel):
     prompt: str
     raw_output: str
     inference_seconds: float
+    prompt_tokens: int
 
 
 class SubmitAnswerResponse(BaseModel):
@@ -1722,6 +1730,18 @@ class SubmitAnswerResponse(BaseModel):
     overall_comments: str
     inference_seconds: float
     debug: ExamDebugInfo
+
+
+class FeedbackStreamRequest(BaseModel):
+    paper_type: Literal["paper1", "paper2"]
+    criterion: Literal["A", "B", "C", "D"]
+    score: int
+    max_score: int
+    student_answer: str = Field(..., min_length=1, max_length=8_000)
+    question: str = Field(..., min_length=1, max_length=2_000)
+    passage_text: str | None = Field(None, max_length=10_000)
+    document_ids: list[str] = Field(default_factory=list)
+    context_mode: Literal["chunks", "titles_only"] = "chunks"
 
 
 # --------------------------------------------------------------------------- #
@@ -1781,8 +1801,8 @@ async def exam_get_paper1() -> Paper1ExamResponse:
 
 @app.get("/api/exam/paper2/questions", response_model=Paper2QuestionsResponse)
 async def exam_get_paper2_questions() -> Paper2QuestionsResponse:
-    """Return the Paper 2 question bank."""
-    return Paper2QuestionsResponse(questions=PAPER2_QUESTIONS)
+    """Return the Paper 2 question bank (loaded from paper2_sub.json)."""
+    return Paper2QuestionsResponse(questions=load_paper2_questions())
 
 
 @app.post("/api/exam/submit-answer", response_model=SubmitAnswerResponse)
@@ -1915,5 +1935,134 @@ async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerRespon
             prompt=result.prompt,
             raw_output=result.raw_output,
             inference_seconds=result.inference_seconds,
+            prompt_tokens=get_llm_service().count_tokens(result.prompt),
         ),
+    )
+
+
+# Module-level set tracking active feedback stream keys.
+# The frontend calls criteria sequentially so concurrent requests from the same
+# session should not happen, but this guard handles accidental double-sends.
+_active_feedback_streams: set[str] = set()
+
+
+@app.post("/api/exam/criterion-feedback/stream")
+async def exam_criterion_feedback_stream(
+    payload: FeedbackStreamRequest,
+) -> StreamingResponse:
+    """SSE streaming endpoint for per-criterion detailed coaching feedback.
+
+    Emits token / done / error events using the same pattern as /api/chat/stream.
+    Returns HTTP 409 if a stream for the same student answer is already active.
+    """
+    stream_key = payload.student_answer[:32]
+    if stream_key in _active_feedback_streams:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A feedback stream for this response is already in progress.",
+        )
+
+    # Resolve criterion label
+    criteria_defs = CRITERIA_BY_PAPER.get(payload.paper_type, [])
+    criterion_info = next(
+        ((lbl, mx) for c, lbl, mx in criteria_defs if c == payload.criterion),
+        None,
+    )
+    if criterion_info is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown criterion {payload.criterion!r} for {payload.paper_type}.",
+        )
+    criterion_label, _ = criterion_info
+
+    # Build context_text for Paper 2 chunks mode
+    context_text: str | None = None
+    if payload.paper_type == "paper2" and payload.context_mode == "chunks":
+        if len(payload.document_ids) != 2:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Paper 2 chunks mode requires exactly 2 document_ids.",
+            )
+        records = [get_document_or_404(doc_id) for doc_id in payload.document_ids]
+        chunks_paths = [_require_chunks(rec) for rec in records]
+        context_text = await run_in_threadpool(
+            retrieve_multi_doc_context,
+            [str(p) for p in chunks_paths],
+            "paper2",
+        )
+
+    svc = get_llm_service()
+    n_ctx = svc.get_context_window_size()
+    prompt_tokens = await run_in_threadpool(
+        estimate_feedback_prompt_tokens,
+        paper_type=payload.paper_type,
+        criterion=payload.criterion,
+        criterion_label=criterion_label,
+        score=payload.score,
+        max_score=payload.max_score,
+        student_answer=payload.student_answer,
+        passage_text=payload.passage_text,
+        context_text=context_text,
+        question=payload.question,
+    )
+    remaining_budget = max(0, n_ctx - prompt_tokens)
+
+    async def _event_generator() -> AsyncGenerator[str, None]:
+        _active_feedback_streams.add(stream_key)
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def _produce() -> None:
+            try:
+                gen = stream_criterion_feedback(
+                    paper_type=payload.paper_type,
+                    criterion=payload.criterion,
+                    criterion_label=criterion_label,
+                    score=payload.score,
+                    max_score=payload.max_score,
+                    student_answer=payload.student_answer,
+                    passage_text=payload.passage_text,
+                    context_text=context_text,
+                    question=payload.question,
+                )
+                try:
+                    while True:
+                        token = next(gen)
+                        loop.call_soon_threadsafe(queue.put_nowait, ("token", token))
+                except StopIteration as exc:
+                    loop.call_soon_threadsafe(queue.put_nowait, ("done", exc.value))
+            except Exception as exc:
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+
+        try:
+            loop.run_in_executor(None, _produce)
+            while True:
+                kind, data = await queue.get()
+                if kind == "token":
+                    yield _sse_event({"type": "token", "text": data})
+                elif kind == "done":
+                    inf_result = data
+                    yield _sse_event({
+                        "type": "done",
+                        "debug": {
+                            "criterion": payload.criterion,
+                            "prompt": inf_result.final_prompt,
+                            "inference_seconds": round(inf_result.inference_seconds, 3),
+                            "prompt_tokens": prompt_tokens,
+                            "remaining_budget": remaining_budget,
+                            "n_ctx": n_ctx,
+                        },
+                    })
+                    return
+                elif kind == "error":
+                    exc = data
+                    yield _sse_event({"type": "error", "detail": str(exc)})
+                    return
+        finally:
+            _active_feedback_streams.discard(stream_key)
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

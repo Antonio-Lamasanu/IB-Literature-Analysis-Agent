@@ -1,20 +1,18 @@
 {
-  "document_ids": ["77a9ec97-0b2d-4255-b1cc-f2f7c430f9f5", "8e65416a-2192-400a-860d-07c761cfd222", "9b081459-cd45-410d-9cb9-c772ad8e3fca"],
+  "document_ids": ["77a9ec97-0b2d-4255-b1cc-f2f7c430f9f5"],
   "models_folder": "C:\\Users\\yolom\\Desktop\\Internship Nedho\\GGUFs",
   "models": [
  
-  "Qwen3.5-2B-Q4_K_M.gguf", 
-  "Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf", 
-  "Qwen3.5-9B-Q4_K_M.gguf", 
-  "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
+    "gemma-3-4b-it-Q4_K_M.gguf"
+
 
   ],
 
-  "n_ctx_values": [4096],
+  "n_ctx_values": [4096, 10000],
   "n_threads": 8,
   "max_tokens": 640,
   "temperature": 0.4,
-  "prompt_formats": ["base_knowledge", "rag", "rag_raw"],
+  "prompt_formats": ["base_knowledge"],
   "questions": [
     "Which literary devices are most prominent in the opening of this work, and how do they establish meaning from the first pages?",
     "What is the central tension or conflict in this work and how does the author develop it structurally?",
@@ -24,6 +22,8 @@
   ],
   "output_dir": "outputs/benchmarks",
   "learn_questions_path": "../useful/learn_questions.json",
+  "test_context_length": true,
+  "context_stress_questions_path": "../useful/context_stress_questions.json",
 
   "chat_models": ["Qwen"],
 

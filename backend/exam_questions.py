@@ -11,6 +11,7 @@ import random
 from pathlib import Path
 
 _PAPER1_JSON = Path(__file__).resolve().parents[1] / "useful" / "paper1_sub.json"
+_PAPER2_JSON = Path(__file__).resolve().parents[1] / "useful" / "paper2_sub.json"
 
 PAPER1_PASSAGE = (
     "The streetlight flickered again.\n"
@@ -49,26 +50,10 @@ def get_random_paper1_passage() -> dict:
     return random.choice(load_paper1_passages())
 
 
-PAPER2_QUESTIONS: list[dict] = [
-    {
-        "id": 1,
-        "text": (
-            "\u201cLiterary works often explore the tension between appearance and reality.\u201d\n"
-            "To what extent is this true of two works you have studied?"
-        ),
-    },
-    {
-        "id": 2,
-        "text": (
-            "How do two works you have studied present the impact of memory "
-            "on individuals or societies?"
-        ),
-    },
-    {
-        "id": 3,
-        "text": (
-            "Writers use setting not only as a backdrop, but as a means of shaping meaning.\n"
-            "Discuss how this is achieved in two works you have studied."
-        ),
-    },
-]
+def load_paper2_questions() -> list[dict]:
+    """Return all entries from useful/paper2_sub.json.
+
+    Each entry has keys: id, text.
+    """
+    with _PAPER2_JSON.open(encoding="utf-8") as f:
+        return json.load(f)

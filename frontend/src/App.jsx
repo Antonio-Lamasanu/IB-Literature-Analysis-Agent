@@ -81,6 +81,12 @@ export default function App() {
   const [examGradingError, setExamGradingError] = useState("");
   const [examDebug, setExamDebug] = useState(null);
 
+  // Per-criterion streaming feedback state
+  // { "A": { status: "idle"|"streaming"|"done"|"error", text: "", error: "", isOpen: false }, ... }
+  const [examFeedbacks, setExamFeedbacks] = useState({});
+  const [examFeedbackStatus, setExamFeedbackStatus] = useState("idle"); // idle|streaming|done
+  const [examTokenDebug, setExamTokenDebug] = useState(null);
+
   // Pre-loaded docs and LLM status (fetched on mount)
   const [availableDocs, setAvailableDocs] = useState([]);
   const [llmAvailable, setLlmAvailable] = useState(false);
@@ -161,6 +167,9 @@ export default function App() {
     setExamGradingStatus("idle");
     setExamGradingError("");
     setExamDebug(null);
+    setExamFeedbacks({});
+    setExamFeedbackStatus("idle");
+    setExamTokenDebug(null);
   };
 
   const resetResult = () => {
@@ -488,19 +497,156 @@ export default function App() {
     setExamStep("writing");
   };
 
+  const startFeedbackStreaming = async (gradingData, studentAnswer, gradingPromptTokens) => {
+    const criteria = gradingData.criteria || [];
+    // Initialise all criteria as idle
+    const initial = {};
+    for (const c of criteria) {
+      initial[c.criterion] = { status: "idle", text: "", error: "", isOpen: false };
+    }
+    setExamFeedbacks(initial);
+    setExamFeedbackStatus("streaming");
+    setExamTokenDebug({
+      nCtx: null,
+      gradingPromptTokens: gradingPromptTokens || 0,
+      calls: criteria.map((c) => ({
+        criterion: c.criterion,
+        label: c.label,
+        promptTokens: null,
+        remainingBudget: null,
+        inferenceSeconds: null,
+        status: "pending",
+      })),
+      totalTokensEstimated: gradingPromptTokens || 0,
+    });
+
+    for (const c of criteria) {
+      // Mark this criterion as streaming and open its detail
+      setExamFeedbacks((prev) => ({
+        ...prev,
+        [c.criterion]: { ...prev[c.criterion], status: "streaming", isOpen: true },
+      }));
+      setExamTokenDebug((prev) =>
+        prev ? { ...prev, calls: prev.calls.map((call) =>
+          call.criterion === c.criterion ? { ...call, status: "streaming" } : call
+        )} : prev
+      );
+
+      const body = {
+        paper_type: examPaperType,
+        criterion: c.criterion,
+        score: c.score,
+        max_score: c.max_score,
+        student_answer: studentAnswer,
+        question: examQuestionText,
+        passage_text: examPaperType === "paper1" ? examPassage : null,
+        document_ids: examPaperType === "paper2" ? examSelectedDocIds : [],
+        context_mode: examPaperType === "paper2" ? examContextMode : "chunks",
+      };
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/exam/criterion-feedback/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+          const detail = await parseErrorDetail(response, "Feedback request failed.");
+          throw new Error(detail);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let doneDebug = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            let ev;
+            try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+            if (ev.type === "token") {
+              setExamFeedbacks((prev) => ({
+                ...prev,
+                [c.criterion]: {
+                  ...prev[c.criterion],
+                  text: (prev[c.criterion]?.text || "") + ev.text,
+                },
+              }));
+            } else if (ev.type === "done") {
+              doneDebug = ev.debug;
+            } else if (ev.type === "error") {
+              throw new Error(ev.detail || "Feedback stream error.");
+            }
+          }
+        }
+
+        setExamFeedbacks((prev) => ({
+          ...prev,
+          [c.criterion]: { ...prev[c.criterion], status: "done" },
+        }));
+        if (doneDebug) {
+          setExamTokenDebug((prev) => {
+            if (!prev) return prev;
+            const newTotal = prev.totalTokensEstimated + (doneDebug.prompt_tokens || 0);
+            return {
+              ...prev,
+              nCtx: doneDebug.n_ctx ?? prev.nCtx,
+              totalTokensEstimated: newTotal,
+              calls: prev.calls.map((call) =>
+                call.criterion === c.criterion
+                  ? {
+                      ...call,
+                      promptTokens: doneDebug.prompt_tokens,
+                      remainingBudget: doneDebug.remaining_budget,
+                      inferenceSeconds: doneDebug.inference_seconds,
+                      status: "done",
+                    }
+                  : call
+              ),
+            };
+          });
+        }
+      } catch (err) {
+        setExamFeedbacks((prev) => ({
+          ...prev,
+          [c.criterion]: { ...prev[c.criterion], status: "error", error: err.message },
+        }));
+        setExamTokenDebug((prev) =>
+          prev ? { ...prev, calls: prev.calls.map((call) =>
+            call.criterion === c.criterion ? { ...call, status: "error" } : call
+          )} : prev
+        );
+        // Continue to next criterion despite error
+      }
+    }
+
+    setExamFeedbackStatus("done");
+  };
+
   const onSubmitExamAnswer = async (event) => {
     event.preventDefault();
     if (!examQuestionText || !examAnswer.trim()) return;
     setExamGradingStatus("grading");
     setExamGradingError("");
+    setExamFeedbacks({});
+    setExamFeedbackStatus("idle");
+    setExamTokenDebug(null);
 
     try {
+      const studentAnswer = examAnswer.trim();
       const body = {
         paper_type: examPaperType,
         question: examQuestionText,
-        student_answer: examAnswer.trim(),
+        student_answer: studentAnswer,
         document_ids: examPaperType === "paper2" ? examSelectedDocIds : [],
         context_mode: examPaperType === "paper2" ? examContextMode : "chunks",
+        passage_text: examPaperType === "paper1" ? examPassage : null,
       };
       const response = await fetch(`${API_BASE_URL}/api/exam/submit-answer`, {
         method: "POST",
@@ -516,6 +662,8 @@ export default function App() {
       setExamDebug(data.debug || null);
       setExamGradingStatus("done");
       setExamStep("done");
+      // Kick off sequential per-criterion detailed feedback streaming
+      startFeedbackStreaming(data, studentAnswer, data.debug?.prompt_tokens || 0);
     } catch (err) {
       setExamGradingStatus("error");
       setExamGradingError(err?.message || "Unexpected error during grading.");
@@ -783,6 +931,14 @@ export default function App() {
         @keyframes blink {
           0%, 100% { opacity: 1; }
           50% { opacity: 0; }
+        }
+
+        .streaming-cursor {
+          display: inline-block;
+          width: 0.5em;
+          background: currentColor;
+          animation: blink 1s step-end infinite;
+          vertical-align: middle;
         }
 
         .chat-form {
@@ -1495,7 +1651,7 @@ export default function App() {
                             onChange={() => setExamContextMode("chunks")}
                             style={{ marginRight: 4 }}
                           />
-                          Chunk context
+                          RAG (excerpt retrieval)
                         </label>
                         <label style={{ cursor: "pointer" }}>
                           <input
@@ -1506,7 +1662,7 @@ export default function App() {
                             onChange={() => setExamContextMode("titles_only")}
                             style={{ marginRight: 4 }}
                           />
-                          Titles only
+                          Base knowledge (no retrieval)
                         </label>
                       </div>
                     </>
@@ -1552,23 +1708,59 @@ export default function App() {
                   </h3>
                   {examGrading.context_mode === "titles_only" ? (
                     <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0 0 12px" }}>
-                      Graded with: titles only
+                      Graded with: base knowledge (no retrieval)
                     </p>
                   ) : (
                     <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0 0 12px" }}>
-                      Graded with: chunk context
+                      Graded with: RAG (excerpt retrieval)
                     </p>
                   )}
 
-                  {(examGrading.criteria || []).map((c) => (
-                    <div key={c.criterion} className="criterion-row">
-                      <div className="criterion-header">
-                        <span className="criterion-label">{c.criterion} — {c.label}</span>
-                        <span className="criterion-score-badge">{c.score} / {c.max_score}</span>
+                  {(examGrading.criteria || []).map((c) => {
+                    const fb = examFeedbacks[c.criterion] || { status: "idle", text: "", error: "", isOpen: false };
+                    const isStreaming = fb.status === "streaming";
+                    const hasContent = fb.text.length > 0;
+                    return (
+                      <div key={c.criterion} className="criterion-row">
+                        <div className="criterion-header">
+                          <span className="criterion-label">{c.criterion} — {c.label}</span>
+                          <span className="criterion-score-badge">{c.score} / {c.max_score}</span>
+                        </div>
+                        <p className="criterion-feedback">
+                          <span style={{ fontSize: "0.75rem", fontVariant: "small-caps", color: "var(--muted)", marginRight: 6 }}>
+                            Examiner note:
+                          </span>
+                          {c.feedback}
+                        </p>
+                        {(hasContent || isStreaming) ? (
+                          <details
+                            open={fb.isOpen}
+                            onToggle={(e) => {
+                              const isOpen = e.currentTarget.open;
+                              setExamFeedbacks((prev) => ({
+                                ...prev,
+                                [c.criterion]: { ...prev[c.criterion], isOpen },
+                              }));
+                            }}
+                            style={{ marginTop: 8 }}
+                          >
+                            <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "var(--muted)", fontWeight: 600 }}>
+                              {isStreaming ? "Detailed coaching (streaming\u2026)" : "Detailed coaching"}
+                            </summary>
+                            <div style={{ marginTop: 6, fontSize: "0.875rem", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                              {fb.text}
+                              {isStreaming ? <span className="streaming-cursor" /> : null}
+                            </div>
+                          </details>
+                        ) : null}
+                        {fb.status === "error" ? (
+                          <p style={{ fontSize: "0.8rem", color: "var(--error, #c0392b)", marginTop: 4 }}>
+                            Feedback unavailable: {fb.error}
+                          </p>
+                        ) : null}
                       </div>
-                      <p className="criterion-feedback">{c.feedback}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {examGrading.overall_comments ? (
                     <div className="exam-overall">
@@ -1589,6 +1781,9 @@ export default function App() {
                           setExamGradingStatus("idle");
                           setExamGradingError("");
                           setExamDebug(null);
+                          setExamFeedbacks({});
+                          setExamFeedbackStatus("idle");
+                          setExamTokenDebug(null);
                           setExamStep("writing");
                         } else {
                           // Go back to doc picker for Paper 2
@@ -1599,6 +1794,9 @@ export default function App() {
                           setExamGradingStatus("idle");
                           setExamGradingError("");
                           setExamDebug(null);
+                          setExamFeedbacks({});
+                          setExamFeedbackStatus("idle");
+                          setExamTokenDebug(null);
                           setExamStep("setup");
                         }
                       }}
@@ -1606,6 +1804,53 @@ export default function App() {
                       Try Again
                     </button>
                   </div>
+
+                  {/* Token usage debug window */}
+                  {examTokenDebug ? (
+                    <details style={{ marginTop: 16 }}>
+                      <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.95rem", color: "var(--muted)" }}>
+                        Token Usage
+                      </summary>
+                      <div style={{ marginTop: 10, fontSize: "0.875rem" }}>
+                        {examTokenDebug.nCtx != null ? (
+                          <p style={{ margin: "0 0 6px" }}>
+                            <strong>Context window:</strong> {examTokenDebug.nCtx.toLocaleString()} tokens
+                          </p>
+                        ) : null}
+                        <p style={{ margin: "0 0 10px" }}>
+                          <strong>Grading call:</strong> ~{examTokenDebug.gradingPromptTokens.toLocaleString()} tokens
+                        </p>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                          <thead>
+                            <tr style={{ borderBottom: "1px solid var(--border, #ddd)", textAlign: "left" }}>
+                              <th style={{ padding: "3px 8px" }}>Criterion</th>
+                              <th style={{ padding: "3px 8px" }}>Prompt tokens</th>
+                              <th style={{ padding: "3px 8px" }}>Remaining budget</th>
+                              <th style={{ padding: "3px 8px" }}>Inference</th>
+                              <th style={{ padding: "3px 8px" }}>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {examTokenDebug.calls.map((call) => (
+                              <tr key={call.criterion} style={{ borderBottom: "1px solid var(--border, #ddd)" }}>
+                                <td style={{ padding: "3px 8px" }}>{call.criterion}</td>
+                                <td style={{ padding: "3px 8px" }}>{call.promptTokens != null ? `~${call.promptTokens.toLocaleString()}` : "—"}</td>
+                                <td style={{ padding: "3px 8px" }}>{call.remainingBudget != null ? call.remainingBudget.toLocaleString() : "—"}</td>
+                                <td style={{ padding: "3px 8px" }}>{call.inferenceSeconds != null ? formatSeconds(call.inferenceSeconds) : "—"}</td>
+                                <td style={{ padding: "3px 8px" }}>{call.status}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <p style={{ marginTop: 8, color: "var(--muted)" }}>
+                          <strong>Total (session):</strong> ~{examTokenDebug.totalTokensEstimated.toLocaleString()} tokens
+                        </p>
+                        <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: 4 }}>
+                          Counts use the model&apos;s tokenizer when available; otherwise words × 1.33.
+                        </p>
+                      </div>
+                    </details>
+                  ) : null}
 
                   {examDebug ? (
                     <details style={{ marginTop: 16 }}>
@@ -1615,6 +1860,9 @@ export default function App() {
                       <div style={{ marginTop: 10 }}>
                         <div className="debug-summary">
                           <p className="debug-line"><strong>Inference time:</strong> {formatSeconds(examDebug.inference_seconds)}</p>
+                          {examDebug.prompt_tokens != null ? (
+                            <p className="debug-line"><strong>Prompt tokens:</strong> ~{examDebug.prompt_tokens.toLocaleString()}</p>
+                          ) : null}
                         </div>
                         <h3 className="debug-section-title">Prompt Sent to Model</h3>
                         <pre className="debug-prompt">{examDebug.prompt || ""}</pre>

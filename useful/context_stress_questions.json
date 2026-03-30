@@ -1,0 +1,101 @@
+[
+    {
+      "name": "light",
+      "description": "Short factual follow-ups expecting brief 1-2 sentence answers. Designed to fill context slowly.",
+      "questions": [
+        "Give an overview of the major themes, narrative structure, and key literary devices in this work.",
+        "Which character most clearly embodies the central theme, and why?",
+        "Name one symbol from the work and briefly explain its significance.",
+        "What is the narrative point of view, and how does it affect the reader?",
+        "Identify one key scene that best captures the author's main message.",
+        "How does the title relate to the work's central theme?",
+        "What genre conventions does this work follow or subvert?",
+        "Name one literary device from the opening pages and describe its effect.",
+        "What is the setting, and how does it influence the mood?",
+        "How does the work end, and what does the ending suggest about its themes?"
+      ]
+    },
+    {
+      "name": "medium",
+      "description": "Standard literary analysis questions expecting 1-2 paragraph answers. Moderate context pressure.",
+      "questions": [
+        "Give an overview of the major themes, narrative structure, and key literary devices in this work.",
+        "How does the author use imagery to reinforce the central theme?",
+        "Trace how the protagonist's perspective shifts across the narrative.",
+        "What structural choices does the author make, and how do they serve the work's purpose?",
+        "How does the author establish and develop the central conflict?",
+        "Analyze the relationship between two contrasting characters and what it reveals thematically.",
+        "How does the author's use of language reflect the historical or cultural context?",
+        "What role does setting play in shaping character and theme?",
+        "How does the author use foreshadowing, and what effect does it have on the reader?",
+        "What is the work's attitude toward its subject matter, and how is that attitude communicated?",
+        "How do secondary characters contribute to the work's main argument?",
+        "What is the significance of the work's resolution, and does it feel earned given what came before?"
+      ]
+    },
+    {
+      "name": "heavy",
+      "description": "Dense analytical questions expecting multi-paragraph responses. High context pressure — trimming expected on later turns.",
+      "questions": [
+        "Give an overview of the major themes, narrative structure, and key literary devices in this work.",
+        "Analyze how the author constructs meaning through the relationship between form and content — does the narrative structure mirror or resist the thematic argument?",
+        "How does the author's choice of narrative perspective shape the reader's moral judgment of characters and events, and where does that positioning become unstable or contradictory?",
+        "Trace the development of a central motif through three key moments in the text and argue for its thematic significance.",
+        "To what extent does the work challenge or reinforce the dominant ideologies of its historical context? Use specific textual evidence to support your argument.",
+        "Analyze the author's use of language at the sentence level in a pivotal scene — how do word choice, syntax, and rhythm contribute to meaning?",
+        "How does the work position the reader in relation to power? Identify the mechanisms through which the text distributes sympathy and judgment.",
+        "Compare the function of two opposing spaces or environments in the work, and argue what their contrast reveals about the work's thematic concerns.",
+        "In what ways does the author's biographical or cultural context illuminate aspects of the text that might otherwise remain opaque? Where does this approach risk over-determining interpretation?",
+        "Identify a moment of ambiguity or tension in the text — a scene, a line, or a character choice — and argue for two plausible but contradictory readings.",
+        "How does the work's use of time — chronology, flashback, compression, dilation — serve its narrative and thematic purposes?",
+        "Evaluate the effectiveness of the work's ending. Does it resolve, complicate, or subvert the expectations established by the rest of the text?",
+        "What is the work's central argument about human experience, and how successfully does it make that argument? Consider structure, characterisation, language, and form in your response.",
+        "Considering everything discussed, articulate the work's most important contribution to literature and explain why it deserves continued study."
+      ]
+    },
+    {
+  "name": "heavy_2",
+  "description": "Dense analytical questions expecting multi-paragraph responses with explicit callbacks to earlier answers. High context pressure — trimming expected on later turns.",
+  "questions": [
+    "Give an overview of the major themes, narrative structure, and key literary devices in this work.",
+    "Which of those themes do you consider the most central, and what specific textual moments make that case most strongly?",
+    "How does the narrative structure you described reinforce that central theme — does the form enact the content in any way?",
+    "Zoom in on the opening of the work. What does the author establish in the first pages that prepares the reader for everything you've described?",
+    "How does the author use perspective and point of view to control what the reader knows and when — and what does that withholding do thematically?",
+    "Trace how the central conflict develops across the work's structure. Where is tension highest, and is the resolution satisfying or deliberately unsatisfying?",
+    "Pick the single most important image or symbol in the work and analyze how it accumulates meaning across the text.",
+    "How does the author's use of language — syntax, diction, tone — shift across the work, and what do those shifts signal about character or theme?",
+    "Returning to the major themes you outlined at the start — now that we've examined structure, perspective, conflict, and language in detail, does your sense of which theme is most central hold, or would you revise it?",
+    "Consider the secondary characters. How do they function in relation to the protagonist — as foils, mirrors, or something else entirely?",
+    "Where does the author's argument about the world feel most explicit, and where is it most effectively implied rather than stated?",
+    "How does the ending recontextualize everything that came before? Does the final image or moment change how you read the opening?",
+    "Considering everything we've discussed — structure, perspective, language, symbolism — what is the single greatest strength of this work as a piece of literature, and its greatest limitation?",
+    "If you were writing an IB Paper 2 essay on this work, what would your thesis be, and which two or three moments would you build the essay around?",
+    "Returning to the narrative structure and literary devices you identified at the very beginning — having now traced them through conflict, character, language, and theme — what does this work argue about the human condition that those specific formal choices make possible, and that no other form could achieve?"
+  ]
+},
+{
+  "name": "basic",
+  "description": "Simple factual questions followed by questions that explicitly reference the answer to Q1, designed to test whether early context is retained or trimmed.",
+  "questions": [
+    "Who is the author of this work, and what are the most essential facts about their life and historical context?",
+    "When was this work first published, and what was happening in the world at that time?",
+    "Who is the protagonist, and what is their situation at the opening of the work?",
+    "What is the setting — time, place, and social environment?",
+    "What is the central conflict, stated as simply as possible?",
+    "Who are the two or three most important secondary characters?",
+    "What is the work's genre, and does it fit that genre comfortably or uneasily?",
+    "What is the most memorable scene in the work, and why does it stand out?",
+    "What is the work's ending, described factually?",
+    "What is the author's general style — how would you describe the prose or verse to someone who has never read it?",
+    "Returning to the author you named at the very start — what other works did they write, and how does this one fit into their broader career?",
+    "Still thinking about that author — what personal experiences or beliefs of theirs are most visible in this work?",
+    "Going back to what you said about the author at the beginning — how did their historical moment shape the choices they made in writing this work?",
+    "Returning to the author's life and context you described first — if they were writing this work today, what would they change and what would they keep?",
+    "You described the author at the start of our conversation — based on everything we've now discussed about the work itself, do you think the author achieved what they set out to do?",
+    "Thinking again about who this author is and where they came from — what is the single most important thing about their identity or context that a reader must understand to fully appreciate this work?",
+    "Returning one more time to your very first answer about the author — has anything we've discussed changed how you would describe them now, or does your original characterisation still hold?",
+    "Finally, and with the author you named at the start firmly in mind — what does this work tell us about them as a human being, beyond what any biography could say?"
+  ]
+}
+]
