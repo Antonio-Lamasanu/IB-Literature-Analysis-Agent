@@ -9,5 +9,7 @@ Pillow==11.3.0
 python-dotenv==1.1.1
 llama-cpp-python
 spacy>=3.7.0
+# Required for google/embeddinggemma-300m: stable transformers throws KeyError: 'gemma3_text'
+git+https://github.com/huggingface/transformers.git
 sentence-transformers>=3.0.0
 numpy>=1.24.0

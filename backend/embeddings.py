@@ -8,7 +8,9 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-_MODEL_NAME = "multi-qa-MiniLM-L6-cos-v1"
+_MODEL_NAME = "google/embeddinggemma-300m"
+EMBEDDING_DIM = 768
+_QUERY_PROMPT = "task: search result | query: "
 _model = None  # None = not tried; False = failed/unavailable
 _model_lock = threading.Lock()
 
@@ -36,12 +38,13 @@ def _get_model():
 
 def encode_texts(texts: list[str]) -> np.ndarray:
     """
-    Encode texts to L2-normalised float32 embeddings of shape (N, 384).
+    Encode document passages to L2-normalised float32 embeddings of shape (N, 768).
 
+    No task prompt is applied — use encode_query() for retrieval queries.
     Because embeddings are L2-normalised, dot product == cosine similarity.
-    Returns an empty (0, 384) array if the model is unavailable or texts is empty.
+    Returns an empty (0, 768) array if the model is unavailable or texts is empty.
     """
-    EMPTY = np.empty((0, 384), dtype=np.float32)
+    EMPTY = np.empty((0, 768), dtype=np.float32)
     if not texts:
         return EMPTY
     model = _get_model()
@@ -50,6 +53,28 @@ def encode_texts(texts: list[str]) -> np.ndarray:
     return model.encode(
         texts,
         batch_size=32,
+        show_progress_bar=False,
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+    ).astype(np.float32)
+
+
+def encode_query(text: str) -> np.ndarray:
+    """
+    Encode a single retrieval query with the required task prompt prefix.
+
+    EmbeddingGemma requires task prompts on queries but not on documents.
+    Returns shape (1, 768), L2-normalised. Returns empty (0, 768) if model unavailable.
+    """
+    EMPTY = np.empty((0, 768), dtype=np.float32)
+    if not text:
+        return EMPTY
+    model = _get_model()
+    if model is None:
+        return EMPTY
+    return model.encode(
+        [_QUERY_PROMPT + text],
+        batch_size=1,
         show_progress_bar=False,
         normalize_embeddings=True,
         convert_to_numpy=True,

@@ -76,6 +76,12 @@ desktop.ini
 
 # ── Claude Code ───────────────────────────────────────────────
 .claude/settings.local.json
+CLAUDE.md
+CONTEXT.md
+.claudeignore
+
+# ── Corpus lookup API cache ───────────────────────────────────
+backend/known_works_api_cache.json
 
 # ── IDEs & editors ────────────────────────────────────────────
 .idea/

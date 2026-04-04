@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import threading
@@ -8,6 +9,8 @@ from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from chat_history import ChatHistoryTurn
 from chunking import ChunkParams, build_chunks, estimate_tokens, get_spacy_nlp, parse_units_from_marked_text
@@ -311,6 +314,13 @@ def load_history_embeddings(
         arr = np.load(str(emb_path)).astype(np.float32)
         if arr.ndim != 2 or arr.shape[0] == 0:
             return None
+        from embeddings import EMBEDDING_DIM
+        if arr.shape[1] != EMBEDDING_DIM:
+            logger.warning(
+                "Stale history embeddings (dim=%d, expected=%d) — skipping history search",
+                arr.shape[1], EMBEDDING_DIM,
+            )
+            return None
     except Exception as exc:
         logger.warning("Failed to load history embeddings from %s: %s", emb_path, exc)
         return None
@@ -455,6 +465,13 @@ def _load_chunk_embeddings(chunks_path: str | Path) -> "Any":
             return None
         arr = np.load(str(emb_path)).astype(np.float32)
         if arr.ndim != 2 or arr.shape[0] == 0:
+            return None
+        from embeddings import EMBEDDING_DIM
+        if arr.shape[1] != EMBEDDING_DIM:
+            logger.warning(
+                "Stale chunk embeddings (dim=%d, expected=%d) at %s — falling back to BM25 only",
+                arr.shape[1], EMBEDDING_DIM, emb_path,
+            )
             return None
         return arr
     except Exception as exc:
@@ -738,8 +755,8 @@ def _rank_persisted_excerpt_features(
     if corpus.chunk_embeddings is not None:
         try:
             import numpy as np
-            from embeddings import encode_texts
-            q_vec = encode_texts([latest_user_question])
+            from embeddings import encode_query
+            q_vec = encode_query(latest_user_question)
             if q_vec.shape[0] == 1:
                 cosine_scores = np.clip(
                     corpus.chunk_embeddings @ q_vec[0], -1.0, 1.0
@@ -924,9 +941,9 @@ def retrieve_relevant_history_turns(
     if history_embeddings is not None:
         try:
             import numpy as np
-            from embeddings import encode_texts
+            from embeddings import encode_query
             if history_embeddings.shape[0] == len(features):
-                q_vec = encode_texts([latest_user_question])
+                q_vec = encode_query(latest_user_question)
                 if q_vec.shape[0] == 1:
                     cosine_scores = np.clip(history_embeddings @ q_vec[0], -1.0, 1.0).tolist()
         except Exception as exc:

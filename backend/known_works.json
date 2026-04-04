@@ -1,0 +1,1916 @@
+{
+  "works": [
+    {
+      "title": "Hamlet",
+      "title_variants": [
+        "The Tragedy of Hamlet, Prince of Denmark"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "Macbeth",
+      "title_variants": [
+        "The Tragedy of Macbeth"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "Othello",
+      "title_variants": [
+        "The Tragedy of Othello, the Moor of Venice"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "King Lear",
+      "title_variants": [
+        "The Tragedy of King Lear"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "A Midsummer Night's Dream",
+      "title_variants": [
+        "Midsummer Night's Dream"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "Romeo and Juliet",
+      "title_variants": [
+        "The Tragedy of Romeo and Juliet"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "The Merchant of Venice",
+      "title_variants": [
+        "Merchant of Venice"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "The Tempest",
+      "title_variants": [
+        "Tempest"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "Much Ado About Nothing",
+      "title_variants": [],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "Twelfth Night",
+      "title_variants": [
+        "Twelfth Night, or What You Will"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "Richard III",
+      "title_variants": [
+        "The Tragedy of Richard III"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "Julius Caesar",
+      "title_variants": [
+        "The Tragedy of Julius Caesar"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "As You Like It",
+      "title_variants": [],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.96
+    },
+    {
+      "title": "Measure for Measure",
+      "title_variants": [],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.94
+    },
+    {
+      "title": "The Winter's Tale",
+      "title_variants": [],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.94
+    },
+    {
+      "title": "Antony and Cleopatra",
+      "title_variants": [
+        "The Tragedy of Antony and Cleopatra"
+      ],
+      "author": "William Shakespeare",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "Pride and Prejudice",
+      "title_variants": [],
+      "author": "Jane Austen",
+      "author_variants": [],
+      "confidence": 0.97
+    },
+    {
+      "title": "Sense and Sensibility",
+      "title_variants": [],
+      "author": "Jane Austen",
+      "author_variants": [],
+      "confidence": 0.96
+    },
+    {
+      "title": "Emma",
+      "title_variants": [],
+      "author": "Jane Austen",
+      "author_variants": [],
+      "confidence": 0.96
+    },
+    {
+      "title": "Persuasion",
+      "title_variants": [],
+      "author": "Jane Austen",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "Northanger Abbey",
+      "title_variants": [],
+      "author": "Jane Austen",
+      "author_variants": [],
+      "confidence": 0.94
+    },
+    {
+      "title": "Mansfield Park",
+      "title_variants": [],
+      "author": "Jane Austen",
+      "author_variants": [],
+      "confidence": 0.94
+    },
+    {
+      "title": "Jane Eyre",
+      "title_variants": [
+        "Jane Eyre: An Autobiography"
+      ],
+      "author": "Charlotte Brontë",
+      "author_variants": [
+        "Charlotte Bronte"
+      ],
+      "confidence": 0.96
+    },
+    {
+      "title": "Wuthering Heights",
+      "title_variants": [],
+      "author": "Emily Brontë",
+      "author_variants": [
+        "Emily Bronte"
+      ],
+      "confidence": 0.96
+    },
+    {
+      "title": "The Tenant of Wildfell Hall",
+      "title_variants": [],
+      "author": "Anne Brontë",
+      "author_variants": [
+        "Anne Bronte"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "Great Expectations",
+      "title_variants": [],
+      "author": "Charles Dickens",
+      "author_variants": [],
+      "confidence": 0.96
+    },
+    {
+      "title": "A Tale of Two Cities",
+      "title_variants": [],
+      "author": "Charles Dickens",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "Oliver Twist",
+      "title_variants": [],
+      "author": "Charles Dickens",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "Hard Times",
+      "title_variants": [],
+      "author": "Charles Dickens",
+      "author_variants": [],
+      "confidence": 0.94
+    },
+    {
+      "title": "Bleak House",
+      "title_variants": [],
+      "author": "Charles Dickens",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "David Copperfield",
+      "title_variants": [
+        "The Personal History of David Copperfield"
+      ],
+      "author": "Charles Dickens",
+      "author_variants": [],
+      "confidence": 0.94
+    },
+    {
+      "title": "Dombey and Son",
+      "title_variants": [],
+      "author": "Charles Dickens",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "Middlemarch",
+      "title_variants": [],
+      "author": "George Eliot",
+      "author_variants": [
+        "Mary Ann Evans"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "title": "The Mill on the Floss",
+      "title_variants": [],
+      "author": "George Eliot",
+      "author_variants": [
+        "Mary Ann Evans"
+      ],
+      "confidence": 0.93
+    },
+    {
+      "title": "Silas Marner",
+      "title_variants": [],
+      "author": "George Eliot",
+      "author_variants": [
+        "Mary Ann Evans"
+      ],
+      "confidence": 0.93
+    },
+    {
+      "title": "Tess of the d'Urbervilles",
+      "title_variants": [
+        "Tess of the d'Urbervilles: A Pure Woman",
+        "Tess of the D'Urbervilles"
+      ],
+      "author": "Thomas Hardy",
+      "author_variants": [],
+      "confidence": 0.94
+    },
+    {
+      "title": "Far from the Madding Crowd",
+      "title_variants": [
+        "Far From the Madding Crowd"
+      ],
+      "author": "Thomas Hardy",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "The Mayor of Casterbridge",
+      "title_variants": [],
+      "author": "Thomas Hardy",
+      "author_variants": [],
+      "confidence": 0.92
+    },
+    {
+      "title": "Jude the Obscure",
+      "title_variants": [],
+      "author": "Thomas Hardy",
+      "author_variants": [],
+      "confidence": 0.91
+    },
+    {
+      "title": "The Return of the Native",
+      "title_variants": [],
+      "author": "Thomas Hardy",
+      "author_variants": [],
+      "confidence": 0.91
+    },
+    {
+      "title": "Treasure Island",
+      "title_variants": [],
+      "author": "Robert Louis Stevenson",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "The Strange Case of Dr Jekyll and Mr Hyde",
+      "title_variants": [
+        "Strange Case of Dr Jekyll and Mr Hyde",
+        "Dr Jekyll and Mr Hyde",
+        "Jekyll and Hyde"
+      ],
+      "author": "Robert Louis Stevenson",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "The Picture of Dorian Gray",
+      "title_variants": [
+        "The Picture of Dorian Grey",
+        "Dorian Gray"
+      ],
+      "author": "Oscar Wilde",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "The Importance of Being Earnest",
+      "title_variants": [],
+      "author": "Oscar Wilde",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "Frankenstein",
+      "title_variants": [
+        "Frankenstein, or The Modern Prometheus"
+      ],
+      "author": "Mary Shelley",
+      "author_variants": [
+        "Mary Wollstonecraft Shelley"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "title": "Dracula",
+      "title_variants": [],
+      "author": "Bram Stoker",
+      "author_variants": [],
+      "confidence": 0.94
+    },
+    {
+      "title": "Nineteen Eighty-Four",
+      "title_variants": [
+        "1984",
+        "Nineteen Eighty Four"
+      ],
+      "author": "George Orwell",
+      "author_variants": [
+        "Eric Arthur Blair"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "title": "Animal Farm",
+      "title_variants": [
+        "Animal Farm: A Fairy Story"
+      ],
+      "author": "George Orwell",
+      "author_variants": [
+        "Eric Arthur Blair"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "title": "Brave New World",
+      "title_variants": [],
+      "author": "Aldous Huxley",
+      "author_variants": [],
+      "confidence": 0.92
+    },
+    {
+      "title": "The Great Gatsby",
+      "title_variants": [],
+      "author": "F. Scott Fitzgerald",
+      "author_variants": [
+        "Francis Scott Fitzgerald"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "title": "Tender is the Night",
+      "title_variants": [],
+      "author": "F. Scott Fitzgerald",
+      "author_variants": [
+        "Francis Scott Fitzgerald"
+      ],
+      "confidence": 0.87
+    },
+    {
+      "title": "To Kill a Mockingbird",
+      "title_variants": [],
+      "author": "Harper Lee",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "Of Mice and Men",
+      "title_variants": [],
+      "author": "John Steinbeck",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "The Grapes of Wrath",
+      "title_variants": [],
+      "author": "John Steinbeck",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "East of Eden",
+      "title_variants": [],
+      "author": "John Steinbeck",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "The Catcher in the Rye",
+      "title_variants": [],
+      "author": "J. D. Salinger",
+      "author_variants": [
+        "JD Salinger",
+        "Jerome David Salinger"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "Lord of the Flies",
+      "title_variants": [],
+      "author": "William Golding",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "The Old Man and the Sea",
+      "title_variants": [],
+      "author": "Ernest Hemingway",
+      "author_variants": [],
+      "confidence": 0.92
+    },
+    {
+      "title": "A Farewell to Arms",
+      "title_variants": [],
+      "author": "Ernest Hemingway",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "For Whom the Bell Tolls",
+      "title_variants": [],
+      "author": "Ernest Hemingway",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "Their Eyes Were Watching God",
+      "title_variants": [],
+      "author": "Zora Neale Hurston",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "The Color Purple",
+      "title_variants": [],
+      "author": "Alice Walker",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "Beloved",
+      "title_variants": [],
+      "author": "Toni Morrison",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "The Bluest Eye",
+      "title_variants": [],
+      "author": "Toni Morrison",
+      "author_variants": [],
+      "confidence": 0.85
+    },
+    {
+      "title": "Song of Solomon",
+      "title_variants": [],
+      "author": "Toni Morrison",
+      "author_variants": [],
+      "confidence": 0.83
+    },
+    {
+      "title": "Invisible Man",
+      "title_variants": [],
+      "author": "Ralph Ellison",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "The Scarlet Letter",
+      "title_variants": [],
+      "author": "Nathaniel Hawthorne",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "Moby-Dick",
+      "title_variants": [
+        "Moby Dick",
+        "The Whale"
+      ],
+      "author": "Herman Melville",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "Adventures of Huckleberry Finn",
+      "title_variants": [
+        "The Adventures of Huckleberry Finn",
+        "Huckleberry Finn"
+      ],
+      "author": "Mark Twain",
+      "author_variants": [
+        "Samuel Langhorne Clemens"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "title": "The Adventures of Tom Sawyer",
+      "title_variants": [
+        "Tom Sawyer"
+      ],
+      "author": "Mark Twain",
+      "author_variants": [
+        "Samuel Langhorne Clemens"
+      ],
+      "confidence": 0.94
+    },
+    {
+      "title": "The Portrait of a Lady",
+      "title_variants": [],
+      "author": "Henry James",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "The Turn of the Screw",
+      "title_variants": [],
+      "author": "Henry James",
+      "author_variants": [],
+      "confidence": 0.89
+    },
+    {
+      "title": "The Awakening",
+      "title_variants": [],
+      "author": "Kate Chopin",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "Heart of Darkness",
+      "title_variants": [],
+      "author": "Joseph Conrad",
+      "author_variants": [],
+      "confidence": 0.92
+    },
+    {
+      "title": "Lord Jim",
+      "title_variants": [],
+      "author": "Joseph Conrad",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "Nostromo",
+      "title_variants": [],
+      "author": "Joseph Conrad",
+      "author_variants": [],
+      "confidence": 0.84
+    },
+    {
+      "title": "Mrs Dalloway",
+      "title_variants": [
+        "Mrs. Dalloway"
+      ],
+      "author": "Virginia Woolf",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "To the Lighthouse",
+      "title_variants": [],
+      "author": "Virginia Woolf",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "The Waves",
+      "title_variants": [],
+      "author": "Virginia Woolf",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "Orlando",
+      "title_variants": [],
+      "author": "Virginia Woolf",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "A Room with a View",
+      "title_variants": [],
+      "author": "E. M. Forster",
+      "author_variants": [
+        "Edward Morgan Forster",
+        "EM Forster"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "Howards End",
+      "title_variants": [
+        "Howard's End"
+      ],
+      "author": "E. M. Forster",
+      "author_variants": [
+        "Edward Morgan Forster",
+        "EM Forster"
+      ],
+      "confidence": 0.88
+    },
+    {
+      "title": "A Passage to India",
+      "title_variants": [],
+      "author": "E. M. Forster",
+      "author_variants": [
+        "Edward Morgan Forster",
+        "EM Forster"
+      ],
+      "confidence": 0.88
+    },
+    {
+      "title": "Sons and Lovers",
+      "title_variants": [],
+      "author": "D. H. Lawrence",
+      "author_variants": [
+        "David Herbert Lawrence",
+        "DH Lawrence"
+      ],
+      "confidence": 0.89
+    },
+    {
+      "title": "Women in Love",
+      "title_variants": [],
+      "author": "D. H. Lawrence",
+      "author_variants": [
+        "David Herbert Lawrence",
+        "DH Lawrence"
+      ],
+      "confidence": 0.88
+    },
+    {
+      "title": "The Rainbow",
+      "title_variants": [],
+      "author": "D. H. Lawrence",
+      "author_variants": [
+        "David Herbert Lawrence",
+        "DH Lawrence"
+      ],
+      "confidence": 0.87
+    },
+    {
+      "title": "Ulysses",
+      "title_variants": [],
+      "author": "James Joyce",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "A Portrait of the Artist as a Young Man",
+      "title_variants": [
+        "Portrait of the Artist as a Young Man"
+      ],
+      "author": "James Joyce",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "Dubliners",
+      "title_variants": [],
+      "author": "James Joyce",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "Death of a Salesman",
+      "title_variants": [],
+      "author": "Arthur Miller",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "All My Sons",
+      "title_variants": [],
+      "author": "Arthur Miller",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "The Crucible",
+      "title_variants": [],
+      "author": "Arthur Miller",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "A View from the Bridge",
+      "title_variants": [],
+      "author": "Arthur Miller",
+      "author_variants": [],
+      "confidence": 0.86
+    },
+    {
+      "title": "A Streetcar Named Desire",
+      "title_variants": [],
+      "author": "Tennessee Williams",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "The Glass Menagerie",
+      "title_variants": [],
+      "author": "Tennessee Williams",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "Cat on a Hot Tin Roof",
+      "title_variants": [],
+      "author": "Tennessee Williams",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "Long Day's Journey Into Night",
+      "title_variants": [
+        "Long Day's Journey into Night"
+      ],
+      "author": "Eugene O'Neill",
+      "author_variants": [
+        "Eugene ONeil",
+        "Eugene O'Neil"
+      ],
+      "confidence": 0.87
+    },
+    {
+      "title": "Things Fall Apart",
+      "title_variants": [],
+      "author": "Chinua Achebe",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "Arrow of God",
+      "title_variants": [],
+      "author": "Chinua Achebe",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "No Longer at Ease",
+      "title_variants": [],
+      "author": "Chinua Achebe",
+      "author_variants": [],
+      "confidence": 0.8
+    },
+    {
+      "title": "One Hundred Years of Solitude",
+      "title_variants": [
+        "100 Years of Solitude",
+        "Cien años de soledad"
+      ],
+      "author": "Gabriel García Márquez",
+      "author_variants": [
+        "Gabriel Garcia Marquez",
+        "García Márquez"
+      ],
+      "confidence": 0.88
+    },
+    {
+      "title": "Love in the Time of Cholera",
+      "title_variants": [
+        "El amor en los tiempos del cólera"
+      ],
+      "author": "Gabriel García Márquez",
+      "author_variants": [
+        "Gabriel Garcia Marquez"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "title": "Chronicle of a Death Foretold",
+      "title_variants": [
+        "Crónica de una muerte anunciada"
+      ],
+      "author": "Gabriel García Márquez",
+      "author_variants": [
+        "Gabriel Garcia Marquez"
+      ],
+      "confidence": 0.83
+    },
+    {
+      "title": "The Stranger",
+      "title_variants": [
+        "L'Étranger",
+        "L'Etranger",
+        "The Outsider"
+      ],
+      "author": "Albert Camus",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "The Plague",
+      "title_variants": [
+        "La Peste"
+      ],
+      "author": "Albert Camus",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "The Fall",
+      "title_variants": [
+        "La Chute"
+      ],
+      "author": "Albert Camus",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "Nausea",
+      "title_variants": [
+        "La Nausée",
+        "La Nausee"
+      ],
+      "author": "Jean-Paul Sartre",
+      "author_variants": [
+        "Jean Paul Sartre"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "title": "The Metamorphosis",
+      "title_variants": [
+        "Metamorphosis",
+        "Die Verwandlung"
+      ],
+      "author": "Franz Kafka",
+      "author_variants": [],
+      "confidence": 0.92
+    },
+    {
+      "title": "The Trial",
+      "title_variants": [
+        "Der Process",
+        "Der Proceß"
+      ],
+      "author": "Franz Kafka",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "The Castle",
+      "title_variants": [
+        "Das Schloss"
+      ],
+      "author": "Franz Kafka",
+      "author_variants": [],
+      "confidence": 0.85
+    },
+    {
+      "title": "Crime and Punishment",
+      "title_variants": [
+        "Преступление и наказание"
+      ],
+      "author": "Fyodor Dostoevsky",
+      "author_variants": [
+        "Fyodor Dostoyevsky",
+        "Fyodor Dostoyevski",
+        "Fedor Dostoevskij"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "The Brothers Karamazov",
+      "title_variants": [
+        "Brothers Karamazov",
+        "Братья Карамазовы"
+      ],
+      "author": "Fyodor Dostoevsky",
+      "author_variants": [
+        "Fyodor Dostoyevsky"
+      ],
+      "confidence": 0.88
+    },
+    {
+      "title": "The Idiot",
+      "title_variants": [
+        "Идиот"
+      ],
+      "author": "Fyodor Dostoevsky",
+      "author_variants": [
+        "Fyodor Dostoyevsky"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "title": "Notes from Underground",
+      "title_variants": [
+        "Notes from the Underground"
+      ],
+      "author": "Fyodor Dostoevsky",
+      "author_variants": [
+        "Fyodor Dostoyevsky"
+      ],
+      "confidence": 0.87
+    },
+    {
+      "title": "Anna Karenina",
+      "title_variants": [],
+      "author": "Leo Tolstoy",
+      "author_variants": [
+        "Lev Tolstoy",
+        "Lev Nikolayevich Tolstoy"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "War and Peace",
+      "title_variants": [
+        "Война и мир"
+      ],
+      "author": "Leo Tolstoy",
+      "author_variants": [
+        "Lev Tolstoy"
+      ],
+      "confidence": 0.88
+    },
+    {
+      "title": "The Death of Ivan Ilyich",
+      "title_variants": [
+        "The Death of Ivan Ilych"
+      ],
+      "author": "Leo Tolstoy",
+      "author_variants": [
+        "Lev Tolstoy"
+      ],
+      "confidence": 0.87
+    },
+    {
+      "title": "Don Quixote",
+      "title_variants": [
+        "Don Quijote",
+        "El ingenioso hidalgo don Quijote de la Mancha"
+      ],
+      "author": "Miguel de Cervantes",
+      "author_variants": [
+        "Cervantes"
+      ],
+      "confidence": 0.88
+    },
+    {
+      "title": "Madame Bovary",
+      "title_variants": [],
+      "author": "Gustave Flaubert",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "Les Misérables",
+      "title_variants": [
+        "Les Miserables"
+      ],
+      "author": "Victor Hugo",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "The Hunchback of Notre-Dame",
+      "title_variants": [
+        "Notre-Dame de Paris",
+        "Notre Dame de Paris"
+      ],
+      "author": "Victor Hugo",
+      "author_variants": [],
+      "confidence": 0.85
+    },
+    {
+      "title": "Germinal",
+      "title_variants": [],
+      "author": "Émile Zola",
+      "author_variants": [
+        "Emile Zola"
+      ],
+      "confidence": 0.82
+    },
+    {
+      "title": "In Search of Lost Time",
+      "title_variants": [
+        "Remembrance of Things Past",
+        "À la recherche du temps perdu",
+        "A la recherche du temps perdu"
+      ],
+      "author": "Marcel Proust",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "Swann's Way",
+      "title_variants": [
+        "Du côté de chez Swann"
+      ],
+      "author": "Marcel Proust",
+      "author_variants": [],
+      "confidence": 0.81
+    },
+    {
+      "title": "Steppenwolf",
+      "title_variants": [
+        "Der Steppenwolf"
+      ],
+      "author": "Hermann Hesse",
+      "author_variants": [
+        "Herman Hesse"
+      ],
+      "confidence": 0.82
+    },
+    {
+      "title": "Siddhartha",
+      "title_variants": [],
+      "author": "Hermann Hesse",
+      "author_variants": [
+        "Herman Hesse"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "title": "The Glass Bead Game",
+      "title_variants": [
+        "Das Glasperlenspiel",
+        "Magister Ludi"
+      ],
+      "author": "Hermann Hesse",
+      "author_variants": [
+        "Herman Hesse"
+      ],
+      "confidence": 0.78
+    },
+    {
+      "title": "Death in Venice",
+      "title_variants": [
+        "Der Tod in Venedig"
+      ],
+      "author": "Thomas Mann",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "The Magic Mountain",
+      "title_variants": [
+        "Der Zauberberg"
+      ],
+      "author": "Thomas Mann",
+      "author_variants": [],
+      "confidence": 0.8
+    },
+    {
+      "title": "Doctor Zhivago",
+      "title_variants": [
+        "Доктор Живаго"
+      ],
+      "author": "Boris Pasternak",
+      "author_variants": [],
+      "confidence": 0.8
+    },
+    {
+      "title": "The Master and Margarita",
+      "title_variants": [
+        "Master and Margarita",
+        "Мастер и Маргарита"
+      ],
+      "author": "Mikhail Bulgakov",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "Antigone",
+      "title_variants": [],
+      "author": "Sophocles",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "Oedipus Rex",
+      "title_variants": [
+        "Oedipus the King",
+        "Oedipus Tyrannus"
+      ],
+      "author": "Sophocles",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "Medea",
+      "title_variants": [],
+      "author": "Euripides",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "The Iliad",
+      "title_variants": [
+        "Iliad"
+      ],
+      "author": "Homer",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "The Odyssey",
+      "title_variants": [
+        "Odyssey"
+      ],
+      "author": "Homer",
+      "author_variants": [],
+      "confidence": 0.95
+    },
+    {
+      "title": "The Oresteia",
+      "title_variants": [
+        "Oresteia"
+      ],
+      "author": "Aeschylus",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "Agamemnon",
+      "title_variants": [],
+      "author": "Aeschylus",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "The Aeneid",
+      "title_variants": [
+        "Aeneid"
+      ],
+      "author": "Virgil",
+      "author_variants": [
+        "Vergil",
+        "Publius Vergilius Maro"
+      ],
+      "confidence": 0.88
+    },
+    {
+      "title": "A Doll's House",
+      "title_variants": [
+        "A Doll House",
+        "Et dukkehjem"
+      ],
+      "author": "Henrik Ibsen",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "Hedda Gabler",
+      "title_variants": [],
+      "author": "Henrik Ibsen",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "The Wild Duck",
+      "title_variants": [
+        "Vildanden"
+      ],
+      "author": "Henrik Ibsen",
+      "author_variants": [],
+      "confidence": 0.85
+    },
+    {
+      "title": "Ghosts",
+      "title_variants": [
+        "Gengangere"
+      ],
+      "author": "Henrik Ibsen",
+      "author_variants": [],
+      "confidence": 0.85
+    },
+    {
+      "title": "The Cherry Orchard",
+      "title_variants": [
+        "Cherry Orchard",
+        "Вишнёвый сад"
+      ],
+      "author": "Anton Chekhov",
+      "author_variants": [
+        "Anton Chekov",
+        "Anton Chekoff"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "Three Sisters",
+      "title_variants": [
+        "The Three Sisters",
+        "Три сестры"
+      ],
+      "author": "Anton Chekhov",
+      "author_variants": [
+        "Anton Chekov"
+      ],
+      "confidence": 0.88
+    },
+    {
+      "title": "The Seagull",
+      "title_variants": [
+        "Seagull",
+        "Чайка"
+      ],
+      "author": "Anton Chekhov",
+      "author_variants": [
+        "Anton Chekov"
+      ],
+      "confidence": 0.87
+    },
+    {
+      "title": "Uncle Vanya",
+      "title_variants": [
+        "Дядя Ваня"
+      ],
+      "author": "Anton Chekhov",
+      "author_variants": [
+        "Anton Chekov"
+      ],
+      "confidence": 0.87
+    },
+    {
+      "title": "Waiting for Godot",
+      "title_variants": [
+        "En attendant Godot"
+      ],
+      "author": "Samuel Beckett",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "Endgame",
+      "title_variants": [
+        "Fin de Partie"
+      ],
+      "author": "Samuel Beckett",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "Rhinoceros",
+      "title_variants": [
+        "Rhinocéros"
+      ],
+      "author": "Eugène Ionesco",
+      "author_variants": [
+        "Eugene Ionesco"
+      ],
+      "confidence": 0.82
+    },
+    {
+      "title": "Season of Migration to the North",
+      "title_variants": [
+        "Mawsim al-hijra ilā al-shamāl"
+      ],
+      "author": "Tayeb Salih",
+      "author_variants": [
+        "al-Tayyib Salih"
+      ],
+      "confidence": 0.78
+    },
+    {
+      "title": "So Long a Letter",
+      "title_variants": [
+        "Une si longue lettre"
+      ],
+      "author": "Mariama Bâ",
+      "author_variants": [
+        "Mariama Ba"
+      ],
+      "confidence": 0.72
+    },
+    {
+      "title": "Nervous Conditions",
+      "title_variants": [],
+      "author": "Tsitsi Dangarembga",
+      "author_variants": [],
+      "confidence": 0.72
+    },
+    {
+      "title": "Half of a Yellow Sun",
+      "title_variants": [],
+      "author": "Chimamanda Ngozi Adichie",
+      "author_variants": [
+        "Chimamanda Adichie"
+      ],
+      "confidence": 0.72
+    },
+    {
+      "title": "Purple Hibiscus",
+      "title_variants": [],
+      "author": "Chimamanda Ngozi Adichie",
+      "author_variants": [
+        "Chimamanda Adichie"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "title": "Disgrace",
+      "title_variants": [],
+      "author": "J. M. Coetzee",
+      "author_variants": [
+        "JM Coetzee",
+        "John Maxwell Coetzee"
+      ],
+      "confidence": 0.78
+    },
+    {
+      "title": "Waiting for the Barbarians",
+      "title_variants": [],
+      "author": "J. M. Coetzee",
+      "author_variants": [
+        "JM Coetzee"
+      ],
+      "confidence": 0.75
+    },
+    {
+      "title": "The God of Small Things",
+      "title_variants": [],
+      "author": "Arundhati Roy",
+      "author_variants": [],
+      "confidence": 0.77
+    },
+    {
+      "title": "Midnight's Children",
+      "title_variants": [
+        "Midnights Children"
+      ],
+      "author": "Salman Rushdie",
+      "author_variants": [],
+      "confidence": 0.8
+    },
+    {
+      "title": "The House on Mango Street",
+      "title_variants": [],
+      "author": "Sandra Cisneros",
+      "author_variants": [],
+      "confidence": 0.78
+    },
+    {
+      "title": "Like Water for Chocolate",
+      "title_variants": [
+        "Como agua para chocolate"
+      ],
+      "author": "Laura Esquivel",
+      "author_variants": [],
+      "confidence": 0.73
+    },
+    {
+      "title": "The Aleph",
+      "title_variants": [
+        "El Aleph"
+      ],
+      "author": "Jorge Luis Borges",
+      "author_variants": [],
+      "confidence": 0.78
+    },
+    {
+      "title": "Ficciones",
+      "title_variants": [
+        "Fictions"
+      ],
+      "author": "Jorge Luis Borges",
+      "author_variants": [],
+      "confidence": 0.78
+    },
+    {
+      "title": "Pedro Páramo",
+      "title_variants": [
+        "Pedro Paramo"
+      ],
+      "author": "Juan Rulfo",
+      "author_variants": [],
+      "confidence": 0.75
+    },
+    {
+      "title": "Blindness",
+      "title_variants": [
+        "Ensaio sobre a cegueira"
+      ],
+      "author": "José Saramago",
+      "author_variants": [
+        "Jose Saramago"
+      ],
+      "confidence": 0.77
+    },
+    {
+      "title": "The Remains of the Day",
+      "title_variants": [],
+      "author": "Kazuo Ishiguro",
+      "author_variants": [],
+      "confidence": 0.8
+    },
+    {
+      "title": "Never Let Me Go",
+      "title_variants": [],
+      "author": "Kazuo Ishiguro",
+      "author_variants": [],
+      "confidence": 0.78
+    },
+    {
+      "title": "Atonement",
+      "title_variants": [],
+      "author": "Ian McEwan",
+      "author_variants": [],
+      "confidence": 0.78
+    },
+    {
+      "title": "The Handmaid's Tale",
+      "title_variants": [
+        "A Handmaid's Tale"
+      ],
+      "author": "Margaret Atwood",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "The Road",
+      "title_variants": [],
+      "author": "Cormac McCarthy",
+      "author_variants": [],
+      "confidence": 0.78
+    },
+    {
+      "title": "Blood Meridian",
+      "title_variants": [],
+      "author": "Cormac McCarthy",
+      "author_variants": [],
+      "confidence": 0.75
+    },
+    {
+      "title": "The English Patient",
+      "title_variants": [],
+      "author": "Michael Ondaatje",
+      "author_variants": [],
+      "confidence": 0.77
+    },
+    {
+      "title": "Life of Pi",
+      "title_variants": [],
+      "author": "Yann Martel",
+      "author_variants": [],
+      "confidence": 0.78
+    },
+    {
+      "title": "The Kite Runner",
+      "title_variants": [],
+      "author": "Khaled Hosseini",
+      "author_variants": [],
+      "confidence": 0.75
+    },
+    {
+      "title": "Cry, the Beloved Country",
+      "title_variants": [],
+      "author": "Alan Paton",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "A Raisin in the Sun",
+      "title_variants": [],
+      "author": "Lorraine Hansberry",
+      "author_variants": [],
+      "confidence": 0.85
+    },
+    {
+      "title": "The Bell Jar",
+      "title_variants": [],
+      "author": "Sylvia Plath",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "Ariel",
+      "title_variants": [],
+      "author": "Sylvia Plath",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "The Waste Land",
+      "title_variants": [],
+      "author": "T. S. Eliot",
+      "author_variants": [
+        "TS Eliot",
+        "Thomas Stearns Eliot"
+      ],
+      "confidence": 0.92
+    },
+    {
+      "title": "Four Quartets",
+      "title_variants": [],
+      "author": "T. S. Eliot",
+      "author_variants": [
+        "TS Eliot"
+      ],
+      "confidence": 0.88
+    },
+    {
+      "title": "The Love Song of J. Alfred Prufrock",
+      "title_variants": [],
+      "author": "T. S. Eliot",
+      "author_variants": [
+        "TS Eliot"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "Leaves of Grass",
+      "title_variants": [],
+      "author": "Walt Whitman",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "Songs of Innocence and of Experience",
+      "title_variants": [
+        "Songs of Innocence and Experience"
+      ],
+      "author": "William Blake",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "Odes",
+      "title_variants": [],
+      "author": "John Keats",
+      "author_variants": [],
+      "confidence": 0.91
+    },
+    {
+      "title": "The Prelude",
+      "title_variants": [],
+      "author": "William Wordsworth",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "Don Juan",
+      "title_variants": [],
+      "author": "Lord Byron",
+      "author_variants": [
+        "George Gordon Byron",
+        "George Gordon, Lord Byron"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "Lyrical Ballads",
+      "title_variants": [],
+      "author": "William Wordsworth",
+      "author_variants": [],
+      "confidence": 0.91
+    },
+    {
+      "title": "Paradise Lost",
+      "title_variants": [],
+      "author": "John Milton",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "The Canterbury Tales",
+      "title_variants": [
+        "Canterbury Tales"
+      ],
+      "author": "Geoffrey Chaucer",
+      "author_variants": [],
+      "confidence": 0.93
+    },
+    {
+      "title": "Beowulf",
+      "title_variants": [],
+      "author": "Anonymous",
+      "author_variants": [
+        "Anonymous",
+        "Unknown"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "Divine Comedy",
+      "title_variants": [
+        "La Divina Commedia",
+        "Inferno",
+        "Purgatorio",
+        "Paradiso"
+      ],
+      "author": "Dante Alighieri",
+      "author_variants": [
+        "Dante"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "Inferno",
+      "title_variants": [
+        "L'Inferno"
+      ],
+      "author": "Dante Alighieri",
+      "author_variants": [
+        "Dante"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "Pygmalion",
+      "title_variants": [],
+      "author": "George Bernard Shaw",
+      "author_variants": [
+        "G. B. Shaw",
+        "GB Shaw"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "title": "Major Barbara",
+      "title_variants": [],
+      "author": "George Bernard Shaw",
+      "author_variants": [
+        "G. B. Shaw",
+        "GB Shaw"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "title": "Saint Joan",
+      "title_variants": [],
+      "author": "George Bernard Shaw",
+      "author_variants": [
+        "G. B. Shaw",
+        "GB Shaw"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "title": "Look Back in Anger",
+      "title_variants": [],
+      "author": "John Osborne",
+      "author_variants": [],
+      "confidence": 0.83
+    },
+    {
+      "title": "The Birthday Party",
+      "title_variants": [],
+      "author": "Harold Pinter",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "Betrayal",
+      "title_variants": [],
+      "author": "Harold Pinter",
+      "author_variants": [],
+      "confidence": 0.8
+    },
+    {
+      "title": "Rosencrantz and Guildenstern Are Dead",
+      "title_variants": [
+        "Rosencrantz and Guildenstern are Dead"
+      ],
+      "author": "Tom Stoppard",
+      "author_variants": [],
+      "confidence": 0.85
+    },
+    {
+      "title": "Translations",
+      "title_variants": [],
+      "author": "Brian Friel",
+      "author_variants": [],
+      "confidence": 0.78
+    },
+    {
+      "title": "The House of the Spirits",
+      "title_variants": [
+        "La casa de los espíritus"
+      ],
+      "author": "Isabel Allende",
+      "author_variants": [],
+      "confidence": 0.8
+    },
+    {
+      "title": "Balzac and the Little Chinese Seamstress",
+      "title_variants": [
+        "Balzac et la petite tailleuse chinoise"
+      ],
+      "author": "Dai Sijie",
+      "author_variants": [],
+      "confidence": 0.7
+    },
+    {
+      "title": "The Woman Warrior",
+      "title_variants": [],
+      "author": "Maxine Hong Kingston",
+      "author_variants": [],
+      "confidence": 0.75
+    },
+    {
+      "title": "Silence",
+      "title_variants": [
+        "Chinmoku"
+      ],
+      "author": "Shūsaku Endō",
+      "author_variants": [
+        "Shusaku Endo"
+      ],
+      "confidence": 0.72
+    },
+    {
+      "title": "Snow Country",
+      "title_variants": [
+        "Yukiguni"
+      ],
+      "author": "Yasunari Kawabata",
+      "author_variants": [],
+      "confidence": 0.72
+    },
+    {
+      "title": "The Sound of Waves",
+      "title_variants": [
+        "Shiosai"
+      ],
+      "author": "Yukio Mishima",
+      "author_variants": [],
+      "confidence": 0.7
+    },
+    {
+      "title": "In the Penal Colony",
+      "title_variants": [
+        "In der Strafkolonie"
+      ],
+      "author": "Franz Kafka",
+      "author_variants": [],
+      "confidence": 0.88
+    },
+    {
+      "title": "Catch-22",
+      "title_variants": [
+        "Catch 22"
+      ],
+      "author": "Joseph Heller",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "Slaughterhouse-Five",
+      "title_variants": [
+        "Slaughterhouse Five",
+        "Slaughterhouse 5"
+      ],
+      "author": "Kurt Vonnegut",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "The Sun Also Rises",
+      "title_variants": [
+        "Fiesta"
+      ],
+      "author": "Ernest Hemingway",
+      "author_variants": [],
+      "confidence": 0.9
+    },
+    {
+      "title": "Midnight in the Garden of Good and Evil",
+      "title_variants": [],
+      "author": "John Berendt",
+      "author_variants": [],
+      "confidence": 0.6
+    },
+    {
+      "title": "The Alchemist",
+      "title_variants": [
+        "O Alquimista"
+      ],
+      "author": "Paulo Coelho",
+      "author_variants": [],
+      "confidence": 0.77
+    },
+    {
+      "title": "One Flew Over the Cuckoo's Nest",
+      "title_variants": [
+        "One Flew Over the Cuckoos Nest"
+      ],
+      "author": "Ken Kesey",
+      "author_variants": [],
+      "confidence": 0.85
+    },
+    {
+      "title": "Fahrenheit 451",
+      "title_variants": [],
+      "author": "Ray Bradbury",
+      "author_variants": [],
+      "confidence": 0.87
+    },
+    {
+      "title": "Native Son",
+      "title_variants": [],
+      "author": "Richard Wright",
+      "author_variants": [],
+      "confidence": 0.85
+    },
+    {
+      "title": "Go Tell It on the Mountain",
+      "title_variants": [],
+      "author": "James Baldwin",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "Giovanni's Room",
+      "title_variants": [],
+      "author": "James Baldwin",
+      "author_variants": [],
+      "confidence": 0.8
+    },
+    {
+      "title": "Notes of a Native Son",
+      "title_variants": [],
+      "author": "James Baldwin",
+      "author_variants": [],
+      "confidence": 0.8
+    },
+    {
+      "title": "The Joy Luck Club",
+      "title_variants": [],
+      "author": "Amy Tan",
+      "author_variants": [],
+      "confidence": 0.78
+    },
+    {
+      "title": "Watership Down",
+      "title_variants": [],
+      "author": "Richard Adams",
+      "author_variants": [],
+      "confidence": 0.82
+    },
+    {
+      "title": "The Unbearable Lightness of Being",
+      "title_variants": [
+        "Nesnesitelná lehkost bytí"
+      ],
+      "author": "Milan Kundera",
+      "author_variants": [],
+      "confidence": 0.8
+    }
+  ],
+  "_comment": "Confidence scores are heuristic estimates, not calibrated probabilities. Do not treat them as ground truth."
+}

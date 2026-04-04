@@ -24,6 +24,9 @@ class DocumentRecord:
     chunk_schema_version: str | None = None
     title: str | None = None
     author: str | None = None
+    known_work_confidence: float | None = None
+    known_work_source: str | None = None
+    known_work_confidence_pending: bool = False
 
     @classmethod
     def from_dict(cls, payload: dict) -> "DocumentRecord" | None:
@@ -72,6 +75,17 @@ class DocumentRecord:
                     if payload.get("author") is not None
                     else None
                 ),
+                known_work_confidence=(
+                    float(payload["known_work_confidence"])
+                    if payload.get("known_work_confidence") is not None
+                    else None
+                ),
+                known_work_source=(
+                    str(payload["known_work_source"])
+                    if payload.get("known_work_source") is not None
+                    else None
+                ),
+                known_work_confidence_pending=bool(payload.get("known_work_confidence_pending", False)),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -153,6 +167,31 @@ class DocumentRegistry:
                 return None
             record.title = title
             record.author = author
+            self._persist_unlocked()
+            return record
+
+    def update_known_work_confidence(
+        self,
+        document_id: str,
+        *,
+        confidence: float,
+        source: str,
+    ) -> DocumentRecord | None:
+        with self._lock:
+            record = self._records.get(document_id)
+            if record is None:
+                return None
+            record.known_work_confidence = confidence
+            record.known_work_source = source
+            self._persist_unlocked()
+            return record
+
+    def update_corpus_pending(self, document_id: str, *, pending: bool) -> DocumentRecord | None:
+        with self._lock:
+            record = self._records.get(document_id)
+            if record is None:
+                return None
+            record.known_work_confidence_pending = pending
             self._persist_unlocked()
             return record
 

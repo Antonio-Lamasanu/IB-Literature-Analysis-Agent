@@ -61,7 +61,7 @@ export default function App() {
   const [chatStatus, setChatStatus] = useState("idle");
   const [chatError, setChatError] = useState("");
   const [chatDebug, setChatDebug] = useState(null);
-  const [promptFormat, setPromptFormat] = useState("rag");
+  const [promptFormat, setPromptFormat] = useState(null);
 
   // Exam mode state
   const [activeMode, setActiveMode] = useState("learn");
@@ -414,7 +414,7 @@ export default function App() {
               return msgs;
             });
           } else if (ev.type === "done") {
-            setChatDebug(ev.debug || null);
+            setChatDebug(ev.debug ? { ...ev.debug, prompt_mode: ev.prompt_mode } : null);
             setChatMessages((previous) => {
               const msgs = [...previous];
               const last = msgs[msgs.length - 1];
@@ -1359,7 +1359,7 @@ export default function App() {
                             setSelectedLearnDocId(doc.document_id);
                             setChatMessages([]);
                             setChatDebug(null);
-                            setPromptFormat("rag");
+                            setPromptFormat(null);
                           }}
                         >
                           <p className="doc-card-name">{doc.title || doc.filename}</p>
@@ -1402,20 +1402,20 @@ export default function App() {
 
                   <div className="prompt-format-toggle">
                     <button
+                      className={`mode-btn${promptFormat === null ? " active" : ""}`}
+                      type="button"
+                      disabled={isChatSending}
+                      onClick={() => setPromptFormat(null)}
+                    >
+                      Hybrid
+                    </button>
+                    <button
                       className={`mode-btn${promptFormat === "rag" ? " active" : ""}`}
                       type="button"
                       disabled={isChatSending}
                       onClick={() => setPromptFormat("rag")}
                     >
                       RAG
-                    </button>
-                    <button
-                      className={`mode-btn${promptFormat === "rag_raw" ? " active" : ""}`}
-                      type="button"
-                      disabled={isChatSending}
-                      onClick={() => setPromptFormat("rag_raw")}
-                    >
-                      Raw Chunks
                     </button>
                     <button
                       className={`mode-btn${promptFormat === "base_knowledge" ? " active" : ""}`}
@@ -1428,8 +1428,8 @@ export default function App() {
                   </div>
                   {promptFormat === "base_knowledge" ? (
                     <p className="prompt-format-note">Model answers from general knowledge — no document retrieval.</p>
-                  ) : promptFormat === "rag_raw" ? (
-                    <p className="prompt-format-note">Retrieves chunks directly — no sentence-window sub-chunking.</p>
+                  ) : promptFormat === null ? (
+                    <p className="prompt-format-note">Auto-selects RAG or Base Knowledge based on corpus confidence and retrieval score.</p>
                   ) : null}
 
                   <form className="chat-form" onSubmit={onSendChat}>
@@ -1469,6 +1469,12 @@ export default function App() {
                     <p className="debug-line"><strong>Retrieval:</strong> {formatSeconds(chatDebug.timing?.retrieval_seconds)}</p>
                     <p className="debug-line"><strong>Prompt build:</strong> {formatSeconds(chatDebug.timing?.prompt_build_seconds)}</p>
                     <p className="debug-line"><strong>Inference:</strong> {formatSeconds(chatDebug.timing?.inference_seconds)}</p>
+                    {chatDebug.prompt_mode ? (
+                      <p className="debug-line"><strong>Prompt mode:</strong> {chatDebug.prompt_mode}</p>
+                    ) : null}
+                    {chatDebug.routing_reason ? (
+                      <p className="debug-line"><strong>Routing reason:</strong> {chatDebug.routing_reason}</p>
+                    ) : null}
                   </div>
 
                   <h3 className="debug-section-title">Final Prompt</h3>

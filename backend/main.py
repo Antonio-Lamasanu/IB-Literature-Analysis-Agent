@@ -8,7 +8,7 @@ import hashlib
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, status
@@ -69,6 +69,8 @@ from retrieval import (
     DEFAULT_RETRIEVE_CANDIDATES,
     build_chat_context_result_with_history,
 )
+from corpus_lookup import lookup_confidence, fire_option_c
+from prompt_router import route_prompt_mode, _confidence_threshold
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -275,6 +277,9 @@ class DocumentMetadataResponse(BaseModel):
     chunks_download_url: str | None = None
     chunk_meta_path: str | None = None
     chunk_schema_version: str | None = None
+    known_work_confidence: float | None = None
+    known_work_source: str | None = None
+    known_work_confidence_pending: bool = False
 
 
 class GenerateChunksResponse(BaseModel):
@@ -298,7 +303,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     document_id: str = Field(..., min_length=1, max_length=128)
     messages: list[ChatMessage] = Field(..., min_length=1)
-    prompt_format: Literal["rag", "rag_raw", "base_knowledge"] = "rag"
+    prompt_format: Optional[Literal["rag", "base_knowledge"]] = None
 
 
 class ChatDebugTimingResponse(BaseModel):
@@ -359,10 +364,12 @@ class ChatDebugResponse(BaseModel):
     final_candidate_mix: list[ChatDebugCandidateResponse] = Field(default_factory=list)
     history_persisted: bool = True
     history_persist_error: str | None = None
+    routing_reason: str | None = None
 
 
 class ChatResponse(BaseModel):
     reply: str
+    prompt_mode: str = ""
     debug: ChatDebugResponse | None = None
 
 
@@ -444,6 +451,9 @@ def to_document_metadata_response(record: DocumentRecord) -> DocumentMetadataRes
         ),
         chunk_meta_path=record.chunk_meta_path,
         chunk_schema_version=record.chunk_schema_version,
+        known_work_confidence=record.known_work_confidence,
+        known_work_source=record.known_work_source,
+        known_work_confidence_pending=record.known_work_confidence_pending,
     )
 
 
@@ -484,6 +494,26 @@ def build_history_candidate_refs(candidates: list[Any]) -> list[dict[str, Any]]:
             }
         )
     return refs
+
+
+def _run_corpus_lookup(document_id: str, title: str | None, author: str | None) -> None:
+    """Background task: run corpus confidence lookup and persist result."""
+    if document_registry.get(document_id) is None:
+        return
+    try:
+        confidence, source, pending = lookup_confidence(title, author)
+        document_registry.update_known_work_confidence(document_id, confidence=confidence, source=source)
+        if pending:
+            document_registry.update_corpus_pending(document_id, pending=True)
+            logger.warning("Corpus lookup: OPTION C PENDING document_id=%s title=%r", document_id, title)
+        logger.info(
+            "Corpus lookup: confidence=%.2f source=%s document_id=%s",
+            confidence,
+            source,
+            document_id,
+        )
+    except Exception as exc:
+        logger.warning("Corpus lookup failed for document_id=%s: %s", document_id, exc)
 
 
 async def save_upload_file(upload_file: UploadFile, destination: Path, max_upload_mb: int) -> None:
@@ -798,6 +828,9 @@ async def process_pdf_endpoint(
                         author,
                         existing_record.document_id,
                     )
+                    background_tasks.add_task(
+                        _run_corpus_lookup, existing_record.document_id, title, author
+                    )
                 except Exception:
                     logger.warning(
                         "Title/author extraction failed for reused document_id=%s",
@@ -863,6 +896,7 @@ async def process_pdf_endpoint(
             )
             document_registry.update_title_author(document_id, title=title, author=author)
             logger.info("Extracted title=%r author=%r for document_id=%s", title, author, document_id)
+            background_tasks.add_task(_run_corpus_lookup, document_id, title, author)
         except Exception:
             logger.warning("Title/author extraction failed for document_id=%s", document_id)
 
@@ -964,7 +998,13 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
     latest_user_question = get_latest_user_question(messages)
     effective_retrieval_mode = CHAT_RETRIEVAL_MODE if CHAT_HISTORY_ENABLED else "chunks_only"
 
-    if not document_text and persisted_chunks_path is None and effective_retrieval_mode == "chunks_only":
+    # No-content guard: skip only when base_knowledge is forced or high corpus confidence
+    # will auto-route there (exact scenario System 1 was built for: well-known book, degraded PDF).
+    needs_content = (
+        (payload.prompt_format or "") != "base_knowledge"
+        and (record.known_work_confidence or 0.0) < _confidence_threshold()
+    )
+    if needs_content and not document_text and persisted_chunks_path is None:
         if not text_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -975,18 +1015,70 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
             detail="Document text is empty and no persisted chunks are available; cannot chat.",
         )
 
-    # --- base_knowledge: skip retrieval entirely ---
-    if payload.prompt_format == "base_knowledge":
-        retrieval_seconds = 0.0
-        reply_text = ""
-        final_prompt = ""
-        prompt_build_seconds = 0.0
-        inference_seconds = 0.0
-        title = record.title or "Unknown"
-        author = record.author or "Unknown"
-        history_messages = messages[:-1]  # everything before the latest question
+    # Always load history (needed for routing signal and RAG context)
+    estimated_context_budget = llm_service.estimate_context_token_budget(
+        messages=messages,
+        max_history_messages=max(1, CHAT_MAX_HISTORY_MESSAGES),
+    )
+    context_token_budget = max(
+        256,
+        min(estimated_context_budget, CHAT_CONTEXT_TOKEN_BUDGET),
+    )
+    retrieval_started = time.perf_counter()
+    history_turns = []
+    if CHAT_HISTORY_ENABLED:
+        history_turns = await run_in_threadpool(
+            load_chat_history,
+            record.document_id,
+            CHAT_HISTORY_STORAGE_DIR,
+        )
+
+    # Always retrieve (top_chunk_score needed for router)
+    try:
+        context_result = build_chat_context_result_with_history(
+            document_text,
+            latest_user_question,
+            history_turns=history_turns,
+            chat_retrieval_mode=effective_retrieval_mode,
+            history_reuse_threshold=CHAT_HISTORY_REUSE_THRESHOLD,
+            history_max_candidates=max(1, CHAT_HISTORY_MAX_CANDIDATES),
+            history_max_excerpts=max(0, CHAT_HISTORY_MAX_EXCERPTS),
+            max_excerpts=max(1, CHAT_CONTEXT_MAX_EXCERPTS),
+            retrieve_candidates=max(1, CHAT_RETRIEVE_CANDIDATES),
+            context_token_budget=context_token_budget,
+            document_id=record.document_id,
+            persisted_chunks_path=persisted_chunks_path,
+            history_storage_dir=CHAT_HISTORY_STORAGE_DIR if CHAT_HISTORY_ENABLED else None,
+            apply_sub_chunking=True,
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load persisted chunks: {exc}",
+        ) from exc
+    retrieval_seconds = time.perf_counter() - retrieval_started
+
+    # Determine prompt mode: explicit override or auto-route
+    top_chunk_score = context_result.retrieved_excerpts[0].score if context_result.retrieved_excerpts else None
+    has_history = len(history_turns) > 0
+    routing_reason = "override"
+    if payload.prompt_format is not None:
+        chosen_mode = payload.prompt_format
+    else:
+        chosen_mode, routing_reason = route_prompt_mode(
+            record.known_work_confidence, top_chunk_score, has_history, record.document_id
+        )
+
+    reply_text = ""
+    final_prompt = ""
+    prompt_build_seconds = 0.0
+    inference_seconds = 0.0
+
+    if chosen_mode == "base_knowledge":
         prompt_build_t0 = time.perf_counter()
-        base_prompt = _build_base_knowledge_prompt(title, author, history_messages, latest_user_question)
+        base_prompt = _build_base_knowledge_prompt(
+            record.title or "Unknown", record.author or "Unknown", messages[:-1], latest_user_question
+        )
         prompt_build_seconds = time.perf_counter() - prompt_build_t0
         try:
             inference_result: LLMInferenceResult = await run_in_threadpool(
@@ -1008,7 +1100,6 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
         final_prompt = inference_result.final_prompt
         inference_seconds = inference_result.inference_seconds
 
-        # Persist history even for base_knowledge turns
         history_persisted = True
         history_persist_error: str | None = None
         if CHAT_HISTORY_ENABLED and latest_user_question:
@@ -1033,13 +1124,14 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
         total_seconds = time.perf_counter() - request_started
         return ChatResponse(
             reply=reply_text,
+            prompt_mode=chosen_mode,
             debug=ChatDebugResponse(
                 final_prompt=final_prompt,
                 total_seconds=total_seconds,
                 retrieval_mode="base_knowledge",
                 retrieved_excerpts=[],
                 timing=ChatDebugTimingResponse(
-                    retrieval_seconds=0.0,
+                    retrieval_seconds=retrieval_seconds,
                     prompt_build_seconds=prompt_build_seconds,
                     inference_seconds=inference_seconds,
                     total_seconds=total_seconds,
@@ -1055,59 +1147,17 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
                 final_candidate_mix=[],
                 history_persisted=history_persisted,
                 history_persist_error=history_persist_error,
+                routing_reason=routing_reason,
             ),
         )
 
-    estimated_context_budget = llm_service.estimate_context_token_budget(
-        messages=messages,
-        max_history_messages=max(1, CHAT_MAX_HISTORY_MESSAGES),
-    )
-    context_token_budget = max(
-        256,
-        min(estimated_context_budget, CHAT_CONTEXT_TOKEN_BUDGET),
-    )
-    retrieval_started = time.perf_counter()
-    history_turns = []
-    if CHAT_HISTORY_ENABLED:
-        history_turns = await run_in_threadpool(
-            load_chat_history,
-            record.document_id,
-            CHAT_HISTORY_STORAGE_DIR,
-        )
-    try:
-        context_result = build_chat_context_result_with_history(
-            document_text,
-            latest_user_question,
-            history_turns=history_turns,
-            chat_retrieval_mode=effective_retrieval_mode,
-            history_reuse_threshold=CHAT_HISTORY_REUSE_THRESHOLD,
-            history_max_candidates=max(1, CHAT_HISTORY_MAX_CANDIDATES),
-            history_max_excerpts=max(0, CHAT_HISTORY_MAX_EXCERPTS),
-            max_excerpts=max(1, CHAT_CONTEXT_MAX_EXCERPTS),
-            retrieve_candidates=max(1, CHAT_RETRIEVE_CANDIDATES),
-            context_token_budget=context_token_budget,
-            document_id=record.document_id,
-            persisted_chunks_path=persisted_chunks_path,
-            history_storage_dir=CHAT_HISTORY_STORAGE_DIR if CHAT_HISTORY_ENABLED else None,
-            apply_sub_chunking=payload.prompt_format != "rag_raw",
-        )
-    except OSError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to load persisted chunks: {exc}",
-        ) from exc
-    retrieval_seconds = time.perf_counter() - retrieval_started
-
+    # rag path
     if not context_result.history_reuse_hit and not context_result.context.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No document or chat-history context is available for this chat request.",
         )
 
-    reply_text = ""
-    final_prompt = ""
-    prompt_build_seconds = 0.0
-    inference_seconds = 0.0
     if context_result.history_reuse_hit and context_result.reused_answer is not None:
         reply_text = "[Answer retrieved from chat history]\n\n" + context_result.reused_answer
     else:
@@ -1180,6 +1230,7 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
     total_seconds = time.perf_counter() - request_started
     return ChatResponse(
         reply=reply_text,
+        prompt_mode=chosen_mode,
         debug=ChatDebugResponse(
             final_prompt=final_prompt,
             total_seconds=total_seconds,
@@ -1218,6 +1269,7 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
             ],
             history_persisted=history_persisted,
             history_persist_error=history_persist_error,
+            routing_reason=routing_reason,
         ),
     )
 
@@ -1258,7 +1310,13 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
     latest_user_question = get_latest_user_question(messages)
     effective_retrieval_mode = CHAT_RETRIEVAL_MODE if CHAT_HISTORY_ENABLED else "chunks_only"
 
-    if not document_text and persisted_chunks_path is None and payload.prompt_format != "base_knowledge":
+    # No-content guard: skip only when base_knowledge is forced or high corpus confidence
+    # will auto-route there (exact scenario System 1 was built for: well-known book, degraded PDF).
+    needs_content = (
+        (payload.prompt_format or "") != "base_knowledge"
+        and (record.known_work_confidence or 0.0) < _confidence_threshold()
+    )
+    if needs_content and not document_text and persisted_chunks_path is None:
         if not text_path.exists():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document text file is missing.")
         raise HTTPException(
@@ -1266,19 +1324,88 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
             detail="Document text is empty and no persisted chunks are available; cannot chat.",
         )
 
-    # --- base_knowledge: skip retrieval, stream directly ---
-    if payload.prompt_format == "base_knowledge":
-        _bk_title = record.title or "Unknown"
-        _bk_author = record.author or "Unknown"
-        _bk_history_messages = messages[:-1]
-        _bk_question = latest_user_question
-        _bk_request_started = request_started
-        _bk_record = record
+    # Always load history (needed for routing signal and RAG context)
+    estimated_context_budget = llm_service.estimate_context_token_budget(
+        messages=messages,
+        max_history_messages=max(1, CHAT_MAX_HISTORY_MESSAGES),
+    )
+    context_token_budget = max(256, min(estimated_context_budget, CHAT_CONTEXT_TOKEN_BUDGET))
 
-        async def _bk_event_generator() -> AsyncGenerator[str, None]:
-            yield _sse_event({"type": "meta", "retrieval_seconds": 0.0, "retrieval_mode": "base_knowledge", "retrieved_excerpts": []})
+    retrieval_started = time.perf_counter()
+    history_turns = []
+    if CHAT_HISTORY_ENABLED:
+        history_turns = await run_in_threadpool(
+            load_chat_history,
+            record.document_id,
+            CHAT_HISTORY_STORAGE_DIR,
+        )
 
-            base_prompt = _build_base_knowledge_prompt(_bk_title, _bk_author, _bk_history_messages, _bk_question)
+    # Always retrieve (top_chunk_score needed for router)
+    try:
+        context_result = build_chat_context_result_with_history(
+            document_text,
+            latest_user_question,
+            history_turns=history_turns,
+            chat_retrieval_mode=effective_retrieval_mode,
+            history_reuse_threshold=CHAT_HISTORY_REUSE_THRESHOLD,
+            history_max_candidates=max(1, CHAT_HISTORY_MAX_CANDIDATES),
+            history_max_excerpts=max(0, CHAT_HISTORY_MAX_EXCERPTS),
+            max_excerpts=max(1, CHAT_CONTEXT_MAX_EXCERPTS),
+            retrieve_candidates=max(1, CHAT_RETRIEVE_CANDIDATES),
+            context_token_budget=context_token_budget,
+            document_id=record.document_id,
+            persisted_chunks_path=persisted_chunks_path,
+            history_storage_dir=CHAT_HISTORY_STORAGE_DIR if CHAT_HISTORY_ENABLED else None,
+            apply_sub_chunking=True,
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load persisted chunks: {exc}",
+        ) from exc
+    retrieval_seconds = time.perf_counter() - retrieval_started
+
+    # Determine prompt mode: explicit override or auto-route
+    top_chunk_score = context_result.retrieved_excerpts[0].score if context_result.retrieved_excerpts else None
+    has_history = len(history_turns) > 0
+    routing_reason = "override"
+    if payload.prompt_format is not None:
+        chosen_mode = payload.prompt_format
+    else:
+        chosen_mode, routing_reason = route_prompt_mode(
+            record.known_work_confidence, top_chunk_score, has_history, record.document_id
+        )
+
+    # Capture mutable state for the generator closure
+    _record = record
+    _context_result = context_result
+    _messages = messages
+    _latest_user_question = latest_user_question
+    _retrieval_seconds = retrieval_seconds
+    _request_started = request_started
+    _chosen_mode = chosen_mode
+    _routing_reason = routing_reason
+
+    async def _event_generator() -> AsyncGenerator[str, None]:
+        yield _sse_event({
+            "type": "meta",
+            "retrieval_seconds": round(_retrieval_seconds, 3),
+            "retrieval_mode": _context_result.retrieval_mode if _chosen_mode == "rag" else _chosen_mode,
+            "retrieved_excerpts": [e.to_debug_dict() for e in _context_result.retrieved_excerpts] if _chosen_mode == "rag" else [],
+            "prompt_mode": _chosen_mode,
+        })
+
+        reply_text = ""
+        final_prompt = ""
+        prompt_build_seconds = 0.0
+        inference_seconds = 0.0
+        history_persisted = True
+        history_persist_error: str | None = None
+
+        if _chosen_mode == "base_knowledge":
+            base_prompt = _build_base_knowledge_prompt(
+                _record.title or "Unknown", _record.author or "Unknown", _messages[:-1], _latest_user_question
+            )
 
             loop = asyncio.get_running_loop()
             queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
@@ -1297,7 +1424,6 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
 
             loop.run_in_executor(None, _produce_bk)
 
-            reply_text = ""
             stream_result = None
             while True:
                 kind, data = await queue.get()
@@ -1318,233 +1444,140 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
             inference_seconds = stream_result.inference_seconds if stream_result else 0.0
             if stream_result:
                 reply_text = stream_result.reply
-            total_seconds = time.perf_counter() - _bk_request_started
+                final_prompt = stream_result.final_prompt
 
-            if CHAT_HISTORY_ENABLED and _bk_question and reply_text:
+            if CHAT_HISTORY_ENABLED and _latest_user_question and reply_text:
                 turn = create_chat_history_turn(
-                    document_id=_bk_record.document_id,
-                    user_query=_bk_question,
+                    document_id=_record.document_id,
+                    user_query=_latest_user_question,
                     assistant_answer=reply_text,
                     retrieval_mode_used="base_knowledge",
                 )
                 try:
                     await run_in_threadpool(
                         append_chat_history_turn,
-                        _bk_record.document_id,
+                        _record.document_id,
                         turn,
                         CHAT_HISTORY_STORAGE_DIR,
                     )
                     asyncio.get_running_loop().run_in_executor(
-                        None, embed_and_save_history, _bk_record.document_id, str(CHAT_HISTORY_STORAGE_DIR)
+                        None, embed_and_save_history, _record.document_id, str(CHAT_HISTORY_STORAGE_DIR)
                     )
                 except OSError:
                     pass
 
-            yield _sse_event({
-                "type": "done",
-                "debug": {
-                    "final_prompt": stream_result.final_prompt if stream_result else base_prompt,
-                    "total_seconds": round(total_seconds, 3),
-                    "retrieval_mode": "base_knowledge",
-                    "timing": {
-                        "retrieval_seconds": 0.0,
-                        "prompt_build_seconds": 0.0,
-                        "inference_seconds": round(inference_seconds, 3),
-                        "total_seconds": round(total_seconds, 3),
-                    },
-                    "history_checked": False,
-                    "history_reuse_hit": False,
-                    "history_top_score": None,
-                    "reused_turn_id": None,
-                    "history_persisted": True,
-                    "history_persist_error": None,
-                    "retrieved_excerpts": [],
-                },
-            })
+        else:  # rag
+            if not _context_result.history_reuse_hit and not _context_result.context.strip():
+                yield _sse_event({"type": "error", "detail": "No document or chat-history context available for this request."})
+                return
 
-        return StreamingResponse(
-            _bk_event_generator(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
+            if _context_result.history_reuse_hit and _context_result.reused_answer is not None:
+                reply_text = "[Answer retrieved from chat history]\n\n" + _context_result.reused_answer
+                yield _sse_event({"type": "token", "text": reply_text})
+            else:
+                loop = asyncio.get_running_loop()
+                queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
 
-    estimated_context_budget = llm_service.estimate_context_token_budget(
-        messages=messages,
-        max_history_messages=max(1, CHAT_MAX_HISTORY_MESSAGES),
-    )
-    context_token_budget = max(256, min(estimated_context_budget, CHAT_CONTEXT_TOKEN_BUDGET))
-
-    retrieval_started = time.perf_counter()
-    history_turns = []
-    if CHAT_HISTORY_ENABLED:
-        history_turns = await run_in_threadpool(
-            load_chat_history,
-            record.document_id,
-            CHAT_HISTORY_STORAGE_DIR,
-        )
-    try:
-        context_result = build_chat_context_result_with_history(
-            document_text,
-            latest_user_question,
-            history_turns=history_turns,
-            chat_retrieval_mode=effective_retrieval_mode,
-            history_reuse_threshold=CHAT_HISTORY_REUSE_THRESHOLD,
-            history_max_candidates=max(1, CHAT_HISTORY_MAX_CANDIDATES),
-            history_max_excerpts=max(0, CHAT_HISTORY_MAX_EXCERPTS),
-            max_excerpts=max(1, CHAT_CONTEXT_MAX_EXCERPTS),
-            retrieve_candidates=max(1, CHAT_RETRIEVE_CANDIDATES),
-            context_token_budget=context_token_budget,
-            document_id=record.document_id,
-            persisted_chunks_path=persisted_chunks_path,
-            history_storage_dir=CHAT_HISTORY_STORAGE_DIR if CHAT_HISTORY_ENABLED else None,
-            apply_sub_chunking=payload.prompt_format != "rag_raw",
-        )
-    except OSError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to load persisted chunks: {exc}",
-        ) from exc
-    retrieval_seconds = time.perf_counter() - retrieval_started
-
-    if not context_result.history_reuse_hit and not context_result.context.strip():
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No document or chat-history context available for this request.",
-        )
-
-    # Capture mutable state for the generator closure
-    _record = record
-    _context_result = context_result
-    _messages = messages
-    _latest_user_question = latest_user_question
-    _retrieval_seconds = retrieval_seconds
-    _request_started = request_started
-
-    async def _event_generator() -> AsyncGenerator[str, None]:
-        # 1. Meta event with retrieval info
-        yield _sse_event({
-            "type": "meta",
-            "retrieval_seconds": round(_retrieval_seconds, 3),
-            "retrieval_mode": _context_result.retrieval_mode,
-            "retrieved_excerpts": [e.to_debug_dict() for e in _context_result.retrieved_excerpts],
-        })
-
-        reply_text = ""
-        final_prompt = ""
-        prompt_build_seconds = 0.0
-        inference_seconds = 0.0
-
-        if _context_result.history_reuse_hit and _context_result.reused_answer is not None:
-            reply_text = "[Answer retrieved from chat history]\n\n" + _context_result.reused_answer
-            yield _sse_event({"type": "token", "text": reply_text})
-        else:
-            loop = asyncio.get_running_loop()
-            queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
-
-            def _produce() -> None:
-                try:
-                    gen = llm_service.generate_reply_stream(
-                        document_text=_context_result.context,
-                        messages=_messages,
-                        max_history_messages=max(1, CHAT_MAX_HISTORY_MESSAGES),
-                        title=_record.title or "",
-                        author=_record.author or "",
-                    )
+                def _produce() -> None:
                     try:
-                        while True:
-                            token = next(gen)
-                            loop.call_soon_threadsafe(queue.put_nowait, ("token", token))
-                    except StopIteration as exc:
-                        loop.call_soon_threadsafe(queue.put_nowait, ("done", exc.value))
-                except Exception as exc:
-                    loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+                        gen = llm_service.generate_reply_stream(
+                            document_text=_context_result.context,
+                            messages=_messages,
+                            max_history_messages=max(1, CHAT_MAX_HISTORY_MESSAGES),
+                            title=_record.title or "",
+                            author=_record.author or "",
+                        )
+                        try:
+                            while True:
+                                token = next(gen)
+                                loop.call_soon_threadsafe(queue.put_nowait, ("token", token))
+                        except StopIteration as exc:
+                            loop.call_soon_threadsafe(queue.put_nowait, ("done", exc.value))
+                    except Exception as exc:
+                        loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
 
-            loop.run_in_executor(None, _produce)
+                loop.run_in_executor(None, _produce)
 
-            stream_result = None
-            while True:
-                kind, data = await queue.get()
-                if kind == "token":
-                    reply_text += data
-                    yield _sse_event({"type": "token", "text": data})
-                elif kind == "done":
-                    stream_result = data
-                    break
-                elif kind == "error":
-                    exc = data
-                    if isinstance(exc, (LLMDisabledError, LLMNotConfiguredError, LLMServiceError)):
-                        yield _sse_event({"type": "error", "detail": str(exc)})
-                    else:
-                        yield _sse_event({"type": "error", "detail": f"Chat inference failed: {exc}"})
-                    return
+                stream_result = None
+                while True:
+                    kind, data = await queue.get()
+                    if kind == "token":
+                        reply_text += data
+                        yield _sse_event({"type": "token", "text": data})
+                    elif kind == "done":
+                        stream_result = data
+                        break
+                    elif kind == "error":
+                        exc = data
+                        if isinstance(exc, (LLMDisabledError, LLMNotConfiguredError, LLMServiceError)):
+                            yield _sse_event({"type": "error", "detail": str(exc)})
+                        else:
+                            yield _sse_event({"type": "error", "detail": f"Chat inference failed: {exc}"})
+                        return
 
-            if stream_result is not None:
-                reply_text = stream_result.reply
-                final_prompt = stream_result.final_prompt
-                prompt_build_seconds = stream_result.prompt_build_seconds
-                inference_seconds = stream_result.inference_seconds
+                if stream_result is not None:
+                    reply_text = stream_result.reply
+                    final_prompt = stream_result.final_prompt
+                    prompt_build_seconds = stream_result.prompt_build_seconds
+                    inference_seconds = stream_result.inference_seconds
+
+            if CHAT_HISTORY_ENABLED and _latest_user_question and reply_text:
+                turn = create_chat_history_turn(
+                    document_id=_record.document_id,
+                    user_query=_latest_user_question,
+                    assistant_answer=reply_text,
+                    retrieval_mode_used=_context_result.retrieval_mode,
+                    retrieved_chunk_refs=build_chunk_history_refs(_context_result.retrieved_excerpts),
+                    retrieved_history_refs=build_history_candidate_refs(_context_result.retrieved_history),
+                    answer_reused_from_history=_context_result.history_reuse_hit,
+                    reused_from_turn_id=_context_result.reused_turn_id,
+                    history_reuse_score=(
+                        _context_result.history_top_score if _context_result.history_reuse_hit else None
+                    ),
+                    document_source_fingerprint=_record.source_fingerprint,
+                    chunk_corpus_path=_record.chunks_path,
+                    chunk_meta_path=_record.chunk_meta_path,
+                )
+                try:
+                    await run_in_threadpool(
+                        append_chat_history_turn,
+                        _record.document_id,
+                        turn,
+                        CHAT_HISTORY_STORAGE_DIR,
+                    )
+                    asyncio.get_running_loop().run_in_executor(
+                        None,
+                        embed_and_save_history,
+                        _record.document_id,
+                        str(CHAT_HISTORY_STORAGE_DIR),
+                    )
+                except OSError as exc:
+                    history_persisted = False
+                    history_persist_error = str(exc)
 
         total_seconds = time.perf_counter() - _request_started
-
-        # Persist history turn (synchronous, runs before done event)
-        history_persisted = True
-        history_persist_error: str | None = None
-        if CHAT_HISTORY_ENABLED and _latest_user_question and reply_text:
-            turn = create_chat_history_turn(
-                document_id=_record.document_id,
-                user_query=_latest_user_question,
-                assistant_answer=reply_text,
-                retrieval_mode_used=_context_result.retrieval_mode,
-                retrieved_chunk_refs=build_chunk_history_refs(_context_result.retrieved_excerpts),
-                retrieved_history_refs=build_history_candidate_refs(_context_result.retrieved_history),
-                answer_reused_from_history=_context_result.history_reuse_hit,
-                reused_from_turn_id=_context_result.reused_turn_id,
-                history_reuse_score=(
-                    _context_result.history_top_score if _context_result.history_reuse_hit else None
-                ),
-                document_source_fingerprint=_record.source_fingerprint,
-                chunk_corpus_path=_record.chunks_path,
-                chunk_meta_path=_record.chunk_meta_path,
-            )
-            try:
-                await run_in_threadpool(
-                    append_chat_history_turn,
-                    _record.document_id,
-                    turn,
-                    CHAT_HISTORY_STORAGE_DIR,
-                )
-                # Embed history in background after stream completes
-                asyncio.get_running_loop().run_in_executor(
-                    None,
-                    embed_and_save_history,
-                    _record.document_id,
-                    str(CHAT_HISTORY_STORAGE_DIR),
-                )
-            except OSError as exc:
-                history_persisted = False
-                history_persist_error = str(exc)
-
-        # 3. Done event with full debug
         yield _sse_event({
             "type": "done",
+            "prompt_mode": _chosen_mode,
             "debug": {
                 "final_prompt": final_prompt,
                 "total_seconds": round(total_seconds, 3),
-                "retrieval_mode": _context_result.retrieval_mode,
+                "retrieval_mode": _context_result.retrieval_mode if _chosen_mode == "rag" else _chosen_mode,
                 "timing": {
                     "retrieval_seconds": round(_retrieval_seconds, 3),
                     "prompt_build_seconds": round(prompt_build_seconds, 3),
                     "inference_seconds": round(inference_seconds, 3),
                     "total_seconds": round(total_seconds, 3),
                 },
-                "history_checked": _context_result.history_checked,
-                "history_reuse_hit": _context_result.history_reuse_hit,
-                "history_top_score": _context_result.history_top_score,
-                "reused_turn_id": _context_result.reused_turn_id,
+                "routing_reason": _routing_reason,
+                "history_checked": _context_result.history_checked if _chosen_mode == "rag" else False,
+                "history_reuse_hit": _context_result.history_reuse_hit if _chosen_mode == "rag" else False,
+                "history_top_score": _context_result.history_top_score if _chosen_mode == "rag" else None,
+                "reused_turn_id": _context_result.reused_turn_id if _chosen_mode == "rag" else None,
                 "history_persisted": history_persisted,
                 "history_persist_error": history_persist_error,
-                "retrieved_excerpts": [e.to_debug_dict() for e in _context_result.retrieved_excerpts],
-                "raw_retrieved_excerpts": [e.to_debug_dict() for e in _context_result.raw_retrieved_excerpts],
+                "retrieved_excerpts": [e.to_debug_dict() for e in _context_result.retrieved_excerpts] if _chosen_mode == "rag" else [],
+                "raw_retrieved_excerpts": [e.to_debug_dict() for e in _context_result.raw_retrieved_excerpts] if _chosen_mode == "rag" else [],
             },
         })
 
@@ -1553,6 +1586,26 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/api/documents/{document_id}/resolve-corpus")
+async def resolve_corpus_endpoint(document_id: str) -> DocumentMetadataResponse:
+    """Manually trigger Option C LLM lookup for a pending document. Dev use only."""
+    record = document_registry.get(document_id)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    api_url = os.environ.get("CORPUS_LLM_API_URL", "")
+    api_key = os.environ.get("CORPUS_LLM_API_KEY", "")
+    if not api_url or not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CORPUS_LLM_API_URL and CORPUS_LLM_API_KEY must be configured",
+        )
+    score, source = await run_in_threadpool(fire_option_c, record.title, record.author)
+    document_registry.update_known_work_confidence(document_id, confidence=score, source=source)
+    document_registry.update_corpus_pending(document_id, pending=False)
+    updated = document_registry.get(document_id)
+    return to_document_metadata_response(updated)
 
 
 @app.post("/api/documents/{document_id}/generate-chunks", response_model=GenerateChunksResponse)
