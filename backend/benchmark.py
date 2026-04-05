@@ -1089,8 +1089,8 @@ def _write_report(
                         is_hybrid = fmt == "hybrid"
                         lines.append(f"    Prompt format: {label}")
                         if is_hybrid:
-                            lines.append(f"    {'Q#':<4} {'Type':<10} {'Retr(s)':<9} {'Infer(s)':<10} {'Total(s)':<10} {'Chosen':<16} {'Reason':<30} Answer preview")
-                            lines.append(f"    {'-'*4} {'-'*10} {'-'*9} {'-'*10} {'-'*10} {'-'*16} {'-'*30} {'-'*40}")
+                            lines.append(f"    {'Q#':<4} {'Type':<10} {'Retr(s)':<9} {'Infer(s)':<10} {'Total(s)':<10} {'SemScore':<10} {'Chosen':<16} {'Reason':<30} Answer preview")
+                            lines.append(f"    {'-'*4} {'-'*10} {'-'*9} {'-'*10} {'-'*10} {'-'*10} {'-'*16} {'-'*30} {'-'*40}")
                         else:
                             lines.append(f"    {'Q#':<4} {'Type':<10} {'Retr(s)':<9} {'Infer(s)':<10} {'Total(s)':<10} Answer preview")
                             lines.append(f"    {'-'*4} {'-'*10} {'-'*9} {'-'*10} {'-'*10} {'-'*40}")
@@ -1107,7 +1107,8 @@ def _write_report(
                             if is_hybrid:
                                 chosen = r.get("router_chosen_format") or ""
                                 reason = r.get("router_reason") or ""
-                                lines.append(f"    {q_num:<4} {q_type:<10} {retr:<9.1f} {infer:<10.1f} {total:<10.1f} {chosen:<16} {reason:<30} {preview}")
+                                sem = r.get("top_semantic_score") or 0.0
+                                lines.append(f"    {q_num:<4} {q_type:<10} {retr:<9.1f} {infer:<10.1f} {total:<10.1f} {sem:<10.3f} {chosen:<16} {reason:<30} {preview}")
                             else:
                                 lines.append(f"    {q_num:<4} {q_type:<10} {retr:<9.1f} {infer:<10.1f} {total:<10.1f} {preview}")
                         lines.append("")
@@ -1210,8 +1211,8 @@ def _write_report(
                                 lines.append("    (server — no client-side trimming)")
 
                             if is_hybrid:
-                                lines.append(f"    {'Turn':<6} {'Type':<10} {'Infer(s)':<10} {'Trimmed':<9} {'Dropped':<8} {'Chosen':<16} {'Reason'}")
-                                lines.append(f"    {'-'*6} {'-'*10} {'-'*10} {'-'*9} {'-'*8} {'-'*16} {'-'*30}")
+                                lines.append(f"    {'Turn':<6} {'Type':<10} {'Infer(s)':<10} {'Trimmed':<9} {'Dropped':<8} {'SemScore':<10} {'Chosen':<16} {'Reason'}")
+                                lines.append(f"    {'-'*6} {'-'*10} {'-'*10} {'-'*9} {'-'*8} {'-'*10} {'-'*16} {'-'*30}")
                             else:
                                 lines.append(f"    {'Turn':<6} {'Type':<10} {'Infer(s)':<10} {'Trimmed':<9} {'Dropped'}")
                                 lines.append(f"    {'-'*6} {'-'*10} {'-'*10} {'-'*9} {'-'*7}")
@@ -1225,7 +1226,8 @@ def _write_report(
                                 if is_hybrid:
                                     chosen = r.get("router_chosen_format") or ""
                                     reason = r.get("router_reason") or ""
-                                    lines.append(f"    {turn:<6} {q_type:<10} {infer:<10.1f} {tlabel:<9} {dropped:<8} {chosen:<16} {reason}")
+                                    sem = r.get("top_semantic_score") or 0.0
+                                    lines.append(f"    {turn:<6} {q_type:<10} {infer:<10.1f} {tlabel:<9} {dropped:<8} {sem:<10.3f} {chosen:<16} {reason}")
                                 else:
                                     lines.append(f"    {turn:<6} {q_type:<10} {infer:<10.1f} {tlabel:<9} {dropped}")
                             lines.append("")
@@ -1394,6 +1396,30 @@ def _write_report(
 # Entry point
 # ---------------------------------------------------------------------------
 
+def regen_report(output_dir: Path) -> None:
+    """Regenerate report.txt from an existing results.jsonl in output_dir."""
+    jsonl_file = output_dir / "results.jsonl"
+    report_file = output_dir / "report.txt"
+    if not jsonl_file.exists():
+        log.error("results.jsonl not found in %s", output_dir)
+        sys.exit(1)
+
+    records: list[dict[str, Any]] = []
+    with jsonl_file.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+
+    if not records:
+        log.error("No records found in %s", jsonl_file)
+        sys.exit(1)
+
+    log.info("Loaded %d records from %s", len(records), jsonl_file)
+    _write_report(report_file, records, questions=[], context_stress_sets=None)
+    log.info("Report written to %s", report_file)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="GGUF model benchmark — Learn mode")
     parser.add_argument(
@@ -1410,5 +1436,15 @@ if __name__ == "__main__":
         metavar="FORMAT",
         help=f"Prompt formats to run (overrides config). Choices: {' '.join(PROMPT_FORMATS)}",
     )
+    parser.add_argument(
+        "--regen-report",
+        type=Path,
+        default=None,
+        metavar="OUTPUT_DIR",
+        help="Regenerate report.txt from an existing results.jsonl in OUTPUT_DIR",
+    )
     args = parser.parse_args()
-    run_benchmark(args.config, formats=args.formats)
+    if args.regen_report:
+        regen_report(args.regen_report)
+    else:
+        run_benchmark(args.config, formats=args.formats)
