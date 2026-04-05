@@ -3,17 +3,16 @@ from __future__ import annotations
 import json
 import logging
 import re
-import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from database import get_connection, get_db_path
 
 logger = logging.getLogger(__name__)
 EXAM_HISTORY_SCHEMA_VERSION = "exam-history-v1"
-_persist_lock = threading.Lock()
 
 
 def _sanitize_document_id(document_id: str) -> str:
@@ -101,46 +100,116 @@ class ExamAttempt:
         return asdict(self)
 
 
-def get_exam_history_path(document_id: str, storage_dir: str | Path) -> Path:
+def _migrate_json_files(storage_dir: str | Path) -> None:
+    """One-time migration: import existing *.json exam history files into the DB."""
     base_dir = Path(storage_dir)
-    return base_dir / f"{_sanitize_document_id(document_id)}.json"
-
-
-def _load_exam_history_from_path(history_path: Path, document_id: str) -> list[ExamAttempt]:
-    if not history_path.exists():
-        return []
-
-    try:
-        payload = json.loads(history_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("Failed to load exam history from %s: %s", history_path, exc)
-        return []
-
-    if isinstance(payload, dict):
-        attempts_payload = payload.get("attempts")
-    elif isinstance(payload, list):
-        attempts_payload = payload
-    else:
-        logger.warning("Ignoring malformed exam history payload in %s", history_path)
-        return []
-
-    if not isinstance(attempts_payload, list):
-        logger.warning("Ignoring exam history without attempts list in %s", history_path)
-        return []
-
-    attempts: list[ExamAttempt] = []
-    for item in attempts_payload:
-        if not isinstance(item, dict):
+    if not base_dir.exists():
+        return
+    db_path = get_db_path()
+    for json_file in sorted(base_dir.glob("*.json")):
+        try:
+            payload = json.loads(json_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
             continue
-        parsed = ExamAttempt.from_dict(item)
-        if parsed and parsed.document_id == document_id:
-            attempts.append(parsed)
-    return attempts
+
+        if isinstance(payload, dict):
+            attempts_payload = payload.get("attempts", [])
+            doc_id = payload.get("document_id", json_file.stem)
+        elif isinstance(payload, list):
+            attempts_payload = payload
+            doc_id = json_file.stem
+        else:
+            continue
+
+        if not isinstance(attempts_payload, list):
+            continue
+
+        migrated = 0
+        with get_connection(db_path) as conn:
+            for item in attempts_payload:
+                if not isinstance(item, dict):
+                    continue
+                attempt = ExamAttempt.from_dict(item)
+                if attempt is None or attempt.document_id != doc_id:
+                    continue
+                conn.execute(
+                    """INSERT OR IGNORE INTO exam_attempts
+                       (attempt_id, document_id, created_at, paper_type, question,
+                        student_answer, score_a, score_b, score_c, score_d,
+                        total_score, max_score, feedback_a, feedback_b, feedback_c,
+                        feedback_d, overall_comments, grading_raw_output, chunks_path,
+                        document_ids, context_mode)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        attempt.attempt_id, attempt.document_id, attempt.created_at,
+                        attempt.paper_type, attempt.question, attempt.student_answer,
+                        attempt.score_a, attempt.score_b, attempt.score_c, attempt.score_d,
+                        attempt.total_score, attempt.max_score,
+                        attempt.feedback_a, attempt.feedback_b, attempt.feedback_c,
+                        attempt.feedback_d, attempt.overall_comments,
+                        attempt.grading_raw_output, attempt.chunks_path,
+                        json.dumps(attempt.document_ids, ensure_ascii=False),
+                        attempt.context_mode,
+                    ),
+                )
+                migrated += 1
+
+        if migrated:
+            logger.info("exam_history: migrated %d attempts from %s", migrated, json_file.name)
+        try:
+            json_file.rename(json_file.with_suffix(".json.migrated"))
+        except OSError as exc:
+            logger.warning("exam_history: could not rename %s: %s", json_file.name, exc)
+
+
+_migrated_dirs: set[str] = set()
+
+
+def _ensure_migrated(storage_dir: str | Path) -> None:
+    key = str(Path(storage_dir).resolve())
+    if key not in _migrated_dirs:
+        _migrated_dirs.add(key)
+        _migrate_json_files(storage_dir)
 
 
 def load_exam_history(document_id: str, storage_dir: str | Path) -> list[ExamAttempt]:
-    history_path = get_exam_history_path(document_id, storage_dir)
-    return _load_exam_history_from_path(history_path, document_id)
+    _ensure_migrated(storage_dir)
+    db_path = get_db_path()
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM exam_attempts WHERE document_id=? ORDER BY created_at ASC",
+            (document_id,),
+        ).fetchall()
+    attempts: list[ExamAttempt] = []
+    for row in rows:
+        try:
+            attempt = ExamAttempt(
+                attempt_id=row["attempt_id"],
+                document_id=row["document_id"],
+                created_at=row["created_at"],
+                paper_type=row["paper_type"],
+                question=row["question"],
+                student_answer=row["student_answer"],
+                score_a=row["score_a"],
+                score_b=row["score_b"],
+                score_c=row["score_c"],
+                score_d=row["score_d"],
+                total_score=row["total_score"],
+                max_score=row["max_score"],
+                feedback_a=row["feedback_a"],
+                feedback_b=row["feedback_b"],
+                feedback_c=row["feedback_c"],
+                feedback_d=row["feedback_d"],
+                overall_comments=row["overall_comments"],
+                grading_raw_output=row["grading_raw_output"],
+                chunks_path=row["chunks_path"],
+                document_ids=json.loads(row["document_ids"] or "[]"),
+                context_mode=row["context_mode"] or "chunks",
+            )
+            attempts.append(attempt)
+        except Exception as exc:
+            logger.warning("exam_history: skipping malformed row: %s", exc)
+    return attempts
 
 
 def create_exam_attempt(
@@ -190,44 +259,48 @@ def create_exam_attempt(
     )
 
 
-def _write_exam_history_unlocked(
-    history_path: Path,
-    document_id: str,
-    attempts: list[ExamAttempt],
-) -> None:
-    history_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "schema_version": EXAM_HISTORY_SCHEMA_VERSION,
-        "document_id": document_id,
-        "attempts": [attempt.to_dict() for attempt in attempts],
-    }
-    temp_path = history_path.with_suffix(f"{history_path.suffix}.tmp")
-    temp_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    temp_path.replace(history_path)
-
-
 def persist_exam_history(
     document_id: str,
     attempts: list[ExamAttempt],
     storage_dir: str | Path,
-) -> Path:
-    history_path = get_exam_history_path(document_id, storage_dir)
-    with _persist_lock:
-        _write_exam_history_unlocked(history_path, document_id, attempts)
-    return history_path
+) -> None:
+    _ensure_migrated(storage_dir)
+    db_path = get_db_path()
+    with get_connection(db_path) as conn:
+        conn.execute("DELETE FROM exam_attempts WHERE document_id=?", (document_id,))
+        for attempt in attempts:
+            _insert_attempt(conn, attempt)
 
 
 def append_exam_attempt(
     document_id: str,
     attempt: ExamAttempt,
     storage_dir: str | Path,
-) -> Path:
-    history_path = get_exam_history_path(document_id, storage_dir)
-    with _persist_lock:
-        attempts = _load_exam_history_from_path(history_path, document_id)
-        attempts.append(attempt)
-        _write_exam_history_unlocked(history_path, document_id, attempts)
-    return history_path
+) -> None:
+    _ensure_migrated(storage_dir)
+    db_path = get_db_path()
+    with get_connection(db_path) as conn:
+        _insert_attempt(conn, attempt)
+
+
+def _insert_attempt(conn: object, attempt: ExamAttempt) -> None:
+    conn.execute(
+        """INSERT OR REPLACE INTO exam_attempts
+           (attempt_id, document_id, created_at, paper_type, question,
+            student_answer, score_a, score_b, score_c, score_d,
+            total_score, max_score, feedback_a, feedback_b, feedback_c,
+            feedback_d, overall_comments, grading_raw_output, chunks_path,
+            document_ids, context_mode)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            attempt.attempt_id, attempt.document_id, attempt.created_at,
+            attempt.paper_type, attempt.question, attempt.student_answer,
+            attempt.score_a, attempt.score_b, attempt.score_c, attempt.score_d,
+            attempt.total_score, attempt.max_score,
+            attempt.feedback_a, attempt.feedback_b, attempt.feedback_c,
+            attempt.feedback_d, attempt.overall_comments,
+            attempt.grading_raw_output, attempt.chunks_path,
+            json.dumps(attempt.document_ids, ensure_ascii=False),
+            attempt.context_mode,
+        ),
+    )

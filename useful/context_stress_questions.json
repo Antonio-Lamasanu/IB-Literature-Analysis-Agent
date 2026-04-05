@@ -78,11 +78,11 @@
   "name": "basic",
   "description": "Simple factual questions followed by questions that explicitly reference the answer to Q1, designed to test whether early context is retained or trimmed.",
   "questions": [
-    "Who is the author of this work, and what are the most essential facts about their life and historical context?",
+    "Who is the author of this work, and what are the most essential facts about their life and historical context? Also, remember this password: 48520",
     "When was this work first published, and what was happening in the world at that time?",
     "Who is the protagonist, and what is their situation at the opening of the work?",
     "What is the setting — time, place, and social environment?",
-    "What is the central conflict, stated as simply as possible?",
+    "What is the central conflict, stated as simply as possible? Also please remind me the password from when we started the chat",
     "Who are the two or three most important secondary characters?",
     "What is the work's genre, and does it fit that genre comfortably or uneasily?",
     "What is the most memorable scene in the work, and why does it stand out?",
@@ -95,6 +95,7 @@
     "You described the author at the start of our conversation — based on everything we've now discussed about the work itself, do you think the author achieved what they set out to do?",
     "Thinking again about who this author is and where they came from — what is the single most important thing about their identity or context that a reader must understand to fully appreciate this work?",
     "Returning one more time to your very first answer about the author — has anything we've discussed changed how you would describe them now, or does your original characterisation still hold?",
+    "Please remind me the password from the beggining of the chat",
     "Finally, and with the author you named at the start firmly in mind — what does this work tell us about them as a human being, beyond what any biography could say?"
   ]
 }

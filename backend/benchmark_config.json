@@ -1,8 +1,9 @@
 {
-  "document_ids": ["77a9ec97-0b2d-4255-b1cc-f2f7c430f9f5"],
+  "document_ids": ["694cad28-54d6-4c25-a362-d786e04e8618", "630c3122-b430-42d5-be13-c984dbb3982a", "0355b505-9f98-4bf9-aa63-b4683b2a5844"],
   "models_folder": "C:\\Users\\yolom\\Desktop\\Internship Nedho\\GGUFs",
   "models": [
  
+    "Gemma-2-9B-It-SPPO-Iter3-Q4_K_M",
     "gemma-3-4b-it-Q4_K_M.gguf"
 
 
@@ -12,7 +13,9 @@
   "n_threads": 8,
   "max_tokens": 640,
   "temperature": 0.4,
-  "prompt_formats": ["base_knowledge"],
+  "prompt_formats": ["hybrid", "base_knowledge"],
+  "context_stress_include_sets": ["basic"],
+  "router_rag_semantic_thresholds": [0.05, 0.1, 0.15, 0.25, 0.5],
   "questions": [
     "Which literary devices are most prominent in the opening of this work, and how do they establish meaning from the first pages?",
     "What is the central tension or conflict in this work and how does the author develop it structurally?",

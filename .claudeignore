@@ -26,3 +26,7 @@ backend/exam_benchmark_config.json
 # Runtime outputs
 backend/outputs/
 backend/uploads/
+
+# Claude Code context docs (local-only, kept out of git)
+CLAUDE.md
+CONTEXT.md

@@ -16,11 +16,59 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from database import get_connection, get_db_path
+
 logger = logging.getLogger(__name__)
 
 _STATIC_JSON_PATH = Path(__file__).parent / "known_works.json"
-_CACHE_PATH = Path(__file__).parent / "known_works_api_cache.json"
+_LEGACY_CACHE_PATH = Path(__file__).parent / "known_works_api_cache.json"
 _CACHE_LOCK = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# One-time migration from known_works_api_cache.json → DB corpus_cache table
+# ---------------------------------------------------------------------------
+
+def _migrate_json_cache_once() -> None:
+    if not _LEGACY_CACHE_PATH.exists():
+        return
+    # Ensure tables exist — this module is imported before DocumentRegistry calls init_db()
+    init_db()
+    try:
+        data = json.loads(_LEGACY_CACHE_PATH.read_text(encoding="utf-8"))
+        entries = data.get("cache", {})
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("corpus_lookup: skipping cache migration (%s)", exc)
+        return
+
+    db_path = get_db_path()
+    migrated = 0
+    with get_connection(db_path) as conn:
+        for key, entry in entries.items():
+            if not isinstance(entry, dict):
+                continue
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO corpus_cache (cache_key, confidence, source, fetched_at) VALUES (?,?,?,?)",
+                    (
+                        str(key),
+                        float(entry.get("confidence", 0.0)),
+                        str(entry.get("source", "unknown")),
+                        str(entry.get("fetched_at", "")),
+                    ),
+                )
+                migrated += 1
+            except Exception:
+                continue
+
+    if migrated:
+        logger.info("corpus_lookup: migrated %d cache entries from %s", migrated, _LEGACY_CACHE_PATH.name)
+    try:
+        _LEGACY_CACHE_PATH.rename(_LEGACY_CACHE_PATH.with_suffix(".json.migrated"))
+    except OSError as exc:
+        logger.warning("corpus_lookup: could not rename cache file: %s", exc)
+
+
+_migrate_json_cache_once()
 
 _ARTICLES_RE = re.compile(r"^(the|a|an)\s+", re.IGNORECASE)
 _PUNCT_RE = re.compile(r"[^\w\s]")
@@ -102,21 +150,30 @@ def _cache_ttl_days() -> int:
         return 30
 
 
-def _load_cache() -> dict[str, Any]:
+def _get_cached(key: str) -> dict[str, Any] | None:
     try:
-        return json.loads(_CACHE_PATH.read_text(encoding="utf-8")).get("cache", {})
-    except (OSError, json.JSONDecodeError):
-        return {}
+        with get_connection(get_db_path()) as conn:
+            row = conn.execute(
+                "SELECT confidence, source, fetched_at FROM corpus_cache WHERE cache_key=?",
+                (key,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {"confidence": row["confidence"], "source": row["source"], "fetched_at": row["fetched_at"]}
+    except Exception as exc:
+        logger.warning("corpus_lookup: DB read failed: %s", exc)
+        return None
 
 
-def _save_cache(cache: dict[str, Any]) -> None:
+def _set_cached(key: str, confidence: float, source: str, fetched_at: str) -> None:
     try:
-        payload = json.dumps({"cache": cache}, ensure_ascii=False, indent=2)
-        tmp = _CACHE_PATH.with_suffix(".tmp")
-        tmp.write_text(payload, encoding="utf-8")
-        tmp.replace(_CACHE_PATH)
-    except OSError as exc:
-        logger.warning("corpus_lookup: could not write cache: %s", exc)
+        with get_connection(get_db_path()) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO corpus_cache (cache_key, confidence, source, fetched_at) VALUES (?,?,?,?)",
+                (key, confidence, source, fetched_at),
+            )
+    except Exception as exc:
+        logger.warning("corpus_lookup: DB write failed: %s", exc)
 
 
 def _cache_key(title: str | None, author: str | None) -> str:
@@ -172,8 +229,7 @@ def _api_lookup(title: str | None, author: str | None) -> tuple[float, str]:
     key = _cache_key(title, author)
 
     with _CACHE_LOCK:
-        cache = _load_cache()
-        entry = cache.get(key)
+        entry = _get_cached(key)
         if entry and _is_cache_fresh(entry):
             return float(entry["confidence"]), str(entry["source"])
 
@@ -230,13 +286,7 @@ def _api_lookup(title: str | None, author: str | None) -> tuple[float, str]:
     score = round(min(max(score, 0.0), 0.92), 4)
 
     with _CACHE_LOCK:
-        cache = _load_cache()
-        cache[key] = {
-            "confidence": score,
-            "source": source,
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-        }
-        _save_cache(cache)
+        _set_cached(key, score, source, datetime.now(timezone.utc).isoformat())
 
     return score, source
 
@@ -305,8 +355,7 @@ def fire_option_c(title: str | None, author: str | None) -> tuple[float, str]:
 
     key = _cache_key(title, author)
     with _CACHE_LOCK:
-        cache = _load_cache()
-        entry = cache.get(key)
+        entry = _get_cached(key)
     if entry and entry.get("source") == "llm_api" and _is_cache_fresh(entry):
         return float(entry["confidence"]), "llm_api"
 
@@ -326,12 +375,6 @@ def fire_option_c(title: str | None, author: str | None) -> tuple[float, str]:
     raw = response.json()["choices"][0]["message"]["content"].strip()
     score = round(max(0.0, min(0.92, float(raw))), 4)
     with _CACHE_LOCK:
-        cache = _load_cache()
         # Always overwrites Option A cache entries; llm_api result is authoritative for this key.
-        cache[key] = {
-            "confidence": score,
-            "source": "llm_api",
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-        }
-        _save_cache(cache)
+        _set_cached(key, score, "llm_api", datetime.now(timezone.utc).isoformat())
     return score, "llm_api"

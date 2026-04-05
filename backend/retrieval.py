@@ -93,11 +93,13 @@ class RetrievedExcerpt:
     text: str
     score: float
     token_estimate: int
+    semantic_score: float = 0.0  # raw cosine similarity; used as routing signal (unaffected by normalization/boost)
 
     def to_debug_dict(self) -> dict:
         return {
             "excerpt_id": self.excerpt_id,
             "score": self.score,
+            "semantic_score": self.semantic_score,
             "heading": self.heading or "UNKNOWN",
             "page_start": self.page_start,
             "page_end": self.page_end,
@@ -773,10 +775,10 @@ def _rank_persisted_excerpt_features(
     ranked: list[RetrievedExcerpt] = []
     for i, feature in enumerate(corpus.features):
         bm25_raw = bm25_scores[i]
+        cos = cosine_scores[i] if cosine_scores is not None else 0.0  # raw cosine; preserved for routing signal
 
         if cosine_scores is not None:
             norm_bm25 = (bm25_raw - min_bm25) / bm25_range
-            cos = cosine_scores[i]
             total_score = BM25_WEIGHT * norm_bm25 + SEMANTIC_WEIGHT * cos
             # Skip only if both signals are non-positive (semantically irrelevant)
             if total_score <= 0 and bm25_raw <= 0:
@@ -797,6 +799,7 @@ def _rank_persisted_excerpt_features(
                 text=feature.excerpt.text,
                 score=round(total_score, 6),
                 token_estimate=feature.excerpt.token_estimate,
+                semantic_score=round(float(cos), 6),
             )
         )
 
@@ -1370,6 +1373,7 @@ def build_chat_context_result_with_history(
     persisted_chunks_path: str | Path | None = None,
     history_storage_dir: str | Path | None = None,
     apply_sub_chunking: bool = True,
+    skip_history_reuse: bool = False,
 ) -> ChatContextResult:
     normalized_mode = (chat_retrieval_mode or "chunks_only").strip().lower()
     if normalized_mode not in {"combined", "history_first", "chunks_only"}:
@@ -1400,7 +1404,9 @@ def build_chat_context_result_with_history(
 
     # Fast path for history_first: exact match on normalized user query — bypasses BM25 entirely.
     # BM25 IDF goes negative with tiny corpora, making threshold-based reuse unreliable.
-    if normalized_mode == "history_first" and available_history_turns:
+    # skip_history_reuse=True when there are prior assistant turns in the current session
+    # (follow-up questions must not accidentally reuse old session answers).
+    if normalized_mode == "history_first" and available_history_turns and not skip_history_reuse:
         new_q_norm = _normalize_query_for_match(latest_user_question)
         for turn in available_history_turns:
             if (
@@ -1449,7 +1455,8 @@ def build_chat_context_result_with_history(
     if normalized_mode == "history_first":
         top_history = history_candidates[0] if history_candidates else None
         if (
-            top_history is not None
+            not skip_history_reuse
+            and top_history is not None
             and top_history.score >= history_reuse_threshold
             and top_history.assistant_answer.strip()
         ):

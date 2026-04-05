@@ -60,6 +60,7 @@ from llm_service import (
     LLMDisabledError,
     LLMInferenceResult,
     LLMNotConfiguredError,
+    LLMService,
     LLMServiceError,
     get_llm_service,
 )
@@ -71,6 +72,9 @@ from retrieval import (
 )
 from corpus_lookup import lookup_confidence, fire_option_c
 from prompt_router import route_prompt_mode, _confidence_threshold
+from system_info import get_system_info
+import database
+import quality
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -262,6 +266,38 @@ if WIPE_CHAT_HISTORY_ON_START:
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/system-info")
+async def system_info_endpoint():
+    return await run_in_threadpool(get_system_info)
+
+
+class ModelSwitchRequest(BaseModel):
+    model_tier: str  # "4b" | "9b" | "12b"
+
+
+@app.post("/api/config/model")
+async def switch_model(req: ModelSwitchRequest):
+    """Hot-swap the local LLM to a different tier's model path."""
+    env_key = {
+        "4b": "LLM_MODEL_4B_PATH",
+        "9b": "LLM_MODEL_9B_PATH",
+        "12b": "LLM_MODEL_12B_PATH",
+    }.get(req.model_tier)
+    if env_key is None:
+        raise HTTPException(status_code=400, detail="Invalid model_tier. Use '4b', '9b', or '12b'.")
+    path = os.getenv(env_key, "").strip()
+    if not path or not os.path.exists(path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"{env_key} is not set or the file was not found. Add it to your .env file.",
+        )
+    svc = get_llm_service()
+    if not hasattr(svc, "reload"):
+        raise HTTPException(status_code=409, detail="Model switching is only supported for local (non-remote) LLM service.")
+    await run_in_threadpool(svc.reload, path)
+    return {"status": "reloaded", "model_tier": req.model_tier, "path": path}
 
 
 class DocumentMetadataResponse(BaseModel):
@@ -865,6 +901,143 @@ async def process_pdf_endpoint(
             detail=f"Failed to process PDF: {exc}",
         ) from exc
 
+    # Extract title/author synchronously — needed before quality comparison decision
+    _title: str | None = None
+    _author: str | None = None
+    if llm_service.is_chat_available():
+        try:
+            _title, _author = await run_in_threadpool(
+                llm_service.extract_title_and_author, final_text[:1500]
+            )
+            logger.info("Extracted title=%r author=%r for upload %s", _title, _author, request_id)
+        except Exception:
+            logger.warning("Title/author extraction failed for upload %s", request_id)
+
+    # Quality comparison: if same work already exists with chunks, compare and decide
+    if _title or _author:
+        _existing = document_registry.find_by_title_author(_title, _author)
+        if _existing and _existing.chunks_path and Path(_existing.chunks_path).exists():
+            logger.info(
+                "Same work detected (title=%r author=%r); comparing quality with doc %s",
+                _title, _author, _existing.document_id,
+            )
+
+            _new_samples = quality.get_text_samples(final_text, n=10)
+            _existing_samples = quality.load_comparison_chunks(_existing.chunks_path)
+
+            # Slice to the body-content window (skip front matter)
+            if len(_new_samples) >= 10:
+                _compare_new = _new_samples[6:10]
+            else:
+                _take = min(4, len(_new_samples))
+                _compare_new = _new_samples[-_take:] if _take else _new_samples
+
+            _winner = quality.noise_check(_compare_new, _existing_samples)
+            _score_new, _score_existing = 5.0, 5.0
+
+            if _winner is None:
+                if llm_service.is_chat_available():
+                    _score_new, _score_existing = await run_in_threadpool(
+                        quality.llm_score, _compare_new, _existing_samples, llm_service
+                    )
+                    _winner = "a" if _score_new > _score_existing else "b"
+                else:
+                    _winner = "b"  # LLM unavailable → keep existing
+
+            if _winner == "b":
+                # Existing is better or tied → discard new upload
+                background_tasks.add_task(remove_file, upload_path)
+                background_tasks.add_task(remove_file, output_path)
+                logger.info(
+                    "Quality comparison: existing doc %s retained; new upload discarded",
+                    _existing.document_id,
+                )
+                if _existing.title is None and _title:
+                    document_registry.update_title_author(
+                        _existing.document_id, title=_title, author=_author
+                    )
+                    background_tasks.add_task(
+                        _run_corpus_lookup, _existing.document_id, _title, _author
+                    )
+                _dl_name = f"{Path(_existing.filename).stem}.txt"
+                return FileResponse(
+                    path=Path(_existing.text_path),
+                    media_type="text/plain; charset=utf-8",
+                    filename=_dl_name,
+                    background=background_tasks,
+                    headers=build_document_headers(_existing),
+                )
+
+            else:
+                # New is better → full chunk + replace existing record in-place
+                logger.info(
+                    "Quality comparison: new upload wins; upgrading doc %s",
+                    _existing.document_id,
+                )
+                _old_text = Path(_existing.text_path)
+                _old_chunks = Path(_existing.chunks_path) if _existing.chunks_path else None
+                _old_meta = Path(_existing.chunk_meta_path) if _existing.chunk_meta_path else None
+
+                try:
+                    _chunks_path, _meta_path, _fp, _chunks_count, _cp, _ = await run_in_threadpool(
+                        build_chunk_outputs,
+                        document_id=_existing.document_id,
+                        final_text=final_text,
+                        original_filename=file.filename,
+                        extraction=extraction,
+                    )
+                except Exception as exc:
+                    remove_file(upload_path)
+                    remove_file(output_path)
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Quality upgrade: chunk generation failed: {exc}",
+                    ) from exc
+
+                _updated = document_registry.replace_files(
+                    _existing.document_id,
+                    text_path=output_path,
+                    chunks_path=_chunks_path,
+                    chunk_meta_path=_meta_path,
+                    chunks_count=_chunks_count,
+                    chunk_schema_version=CHUNK_SCHEMA_VERSION,
+                    processing_mode=extraction.mode,
+                    text_chars=len(final_text),
+                    pages=extraction.pages_count,
+                    quality_score=float(_score_new),
+                )
+                document_registry.update_title_author(
+                    _existing.document_id, title=_title, author=_author
+                )
+                background_tasks.add_task(
+                    _run_corpus_lookup, _existing.document_id, _title, _author
+                )
+
+                # Clean up old files (registry already updated, safe to delete)
+                for _old_p in [_old_text, _old_chunks, _old_meta]:
+                    if _old_p and _old_p != output_path and _old_p.exists():
+                        background_tasks.add_task(remove_file, _old_p)
+                if _old_chunks:
+                    try:
+                        from embeddings import embeddings_path_for_chunks
+                        _old_emb = embeddings_path_for_chunks(_old_chunks)
+                        if _old_emb.exists():
+                            background_tasks.add_task(remove_file, _old_emb)
+                    except Exception:
+                        pass
+
+                background_tasks.add_task(remove_file, upload_path)
+                logger.info("Persisting quality-upgraded text file: %s", output_path)
+                record = _updated or _existing
+                return FileResponse(
+                    path=output_path,
+                    media_type="text/plain; charset=utf-8",
+                    filename=f"{Path(file.filename).stem}.txt",
+                    background=background_tasks,
+                    headers=build_document_headers(record),
+                )
+
+    # Normal flow: new document
     document_id = request_id
     record = document_registry.register(
         document_id=document_id,
@@ -889,19 +1062,12 @@ async def process_pdf_endpoint(
             detail=f"Failed to generate chunks: {exc}",
         ) from exc
 
-    if llm_service.is_chat_available():
-        try:
-            title, author = await run_in_threadpool(
-                llm_service.extract_title_and_author, final_text[:1500]
-            )
-            document_registry.update_title_author(document_id, title=title, author=author)
-            logger.info("Extracted title=%r author=%r for document_id=%s", title, author, document_id)
-            background_tasks.add_task(_run_corpus_lookup, document_id, title, author)
-        except Exception:
-            logger.warning("Title/author extraction failed for document_id=%s", document_id)
+    if _title or _author:
+        document_registry.update_title_author(document_id, title=_title, author=_author)
+        logger.info("Updated title=%r author=%r for document_id=%s", _title, _author, document_id)
+        background_tasks.add_task(_run_corpus_lookup, document_id, _title, _author)
 
     background_tasks.add_task(remove_file, upload_path)
-    # Keep /api/process-pdf outputs for reuse (for example as aiModel.py context input).
     logger.info("Persisting extracted text output file: %s", output_path)
 
     download_name = f"{Path(file.filename).stem}.txt"
@@ -971,6 +1137,16 @@ def download_document_chunks(document_id: str) -> FileResponse:
         media_type="application/x-ndjson; charset=utf-8",
         filename=download_name,
     )
+
+
+@app.delete("/api/documents/{document_id}")
+def delete_document(document_id: str):
+    record = get_document_or_404(document_id)
+    document_registry.remove(document_id)
+    for path_str in (record.text_path, record.chunks_path, record.chunk_meta_path):
+        if path_str:
+            remove_file(Path(path_str))
+    return {"deleted": document_id}
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -1058,15 +1234,15 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
         ) from exc
     retrieval_seconds = time.perf_counter() - retrieval_started
 
-    # Determine prompt mode: explicit override or auto-route
-    top_chunk_score = context_result.retrieved_excerpts[0].score if context_result.retrieved_excerpts else None
+    # Determine prompt mode: explicit override or auto-route using raw cosine similarity
+    top_semantic_score = context_result.retrieved_excerpts[0].semantic_score if context_result.retrieved_excerpts else None
     has_history = len(history_turns) > 0
     routing_reason = "override"
     if payload.prompt_format is not None:
         chosen_mode = payload.prompt_format
     else:
         chosen_mode, routing_reason = route_prompt_mode(
-            record.known_work_confidence, top_chunk_score, has_history, record.document_id
+            record.known_work_confidence, top_semantic_score, has_history, record.document_id
         )
 
     reply_text = ""
@@ -1117,7 +1293,7 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
                     CHAT_HISTORY_STORAGE_DIR,
                 )
                 background_tasks.add_task(embed_and_save_history, record.document_id, CHAT_HISTORY_STORAGE_DIR)
-            except OSError as exc:
+            except Exception as exc:
                 history_persisted = False
                 history_persist_error = str(exc)
 
@@ -1218,7 +1394,7 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
                 record.document_id,
                 CHAT_HISTORY_STORAGE_DIR,
             )
-        except OSError as exc:
+        except Exception as exc:
             history_persisted = False
             history_persist_error = str(exc)
             logger.warning(
@@ -1340,7 +1516,10 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
             CHAT_HISTORY_STORAGE_DIR,
         )
 
-    # Always retrieve (top_chunk_score needed for router)
+    # Skip history reuse for follow-up questions (any assistant turn already in session).
+    skip_history_reuse = any(m.get("role") == "assistant" for m in messages)
+
+    # Always retrieve (semantic_score of top chunk needed for router)
     try:
         context_result = build_chat_context_result_with_history(
             document_text,
@@ -1357,6 +1536,7 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
             persisted_chunks_path=persisted_chunks_path,
             history_storage_dir=CHAT_HISTORY_STORAGE_DIR if CHAT_HISTORY_ENABLED else None,
             apply_sub_chunking=True,
+            skip_history_reuse=skip_history_reuse,
         )
     except OSError as exc:
         raise HTTPException(
@@ -1365,15 +1545,15 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
         ) from exc
     retrieval_seconds = time.perf_counter() - retrieval_started
 
-    # Determine prompt mode: explicit override or auto-route
-    top_chunk_score = context_result.retrieved_excerpts[0].score if context_result.retrieved_excerpts else None
+    # Determine prompt mode: explicit override or auto-route using raw cosine similarity
+    top_semantic_score = context_result.retrieved_excerpts[0].semantic_score if context_result.retrieved_excerpts else None
     has_history = len(history_turns) > 0
     routing_reason = "override"
     if payload.prompt_format is not None:
         chosen_mode = payload.prompt_format
     else:
         chosen_mode, routing_reason = route_prompt_mode(
-            record.known_work_confidence, top_chunk_score, has_history, record.document_id
+            record.known_work_confidence, top_semantic_score, has_history, record.document_id
         )
 
     # Capture mutable state for the generator closure
@@ -1551,7 +1731,7 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
                         _record.document_id,
                         str(CHAT_HISTORY_STORAGE_DIR),
                     )
-                except OSError as exc:
+                except Exception as exc:
                     history_persisted = False
                     history_persist_error = str(exc)
 
@@ -1827,6 +2007,38 @@ async def get_status() -> dict:
     return {"chat_available": chat_available}
 
 
+class ModelSelectRequest(BaseModel):
+    model_filename: str
+
+
+@app.get("/api/models")
+async def list_models() -> dict:
+    """List all *.gguf files in backend/models/ and indicate the active model."""
+    svc = get_llm_service()
+    if not isinstance(svc, LLMService):
+        return {"models": [], "active": None}
+    models = svc.list_available_models()
+    active = next((m["filename"] for m in models if m["active"]), None)
+    return {"models": models, "active": active}
+
+
+@app.post("/api/models/select")
+async def select_model(body: ModelSelectRequest) -> dict:
+    """Hot-swap the active GGUF model by filename (must exist in backend/models/)."""
+    from llm_service import _DEFAULT_MODELS_DIR
+    svc = get_llm_service()
+    if not isinstance(svc, LLMService):
+        raise HTTPException(status_code=400, detail="Model switching is only available in local LLM mode.")
+    fn = body.model_filename.strip()
+    if not fn or "/" in fn or "\\" in fn or ".." in fn:
+        raise HTTPException(status_code=422, detail="Invalid model filename.")
+    target = _DEFAULT_MODELS_DIR / fn
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail=f"Model file not found: {fn}")
+    await run_in_threadpool(svc.reload, str(target))
+    return {"active": fn, "status": "switched"}
+
+
 @app.get("/api/documents", response_model=list[DocumentSummary])
 async def list_documents() -> list[DocumentSummary]:
     """List all registered documents, most recently created first (one per unique work)."""
@@ -1964,7 +2176,7 @@ async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerRespon
             attempt,
             EXAM_HISTORY_STORAGE_DIR,
         )
-    except OSError as exc:
+    except Exception as exc:
         logger.warning("Failed to persist exam attempt for document_id=%s: %s", history_doc_id, exc)
 
     return SubmitAnswerResponse(

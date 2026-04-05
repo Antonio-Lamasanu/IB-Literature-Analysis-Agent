@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Generator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _dc_replace
 from pathlib import Path
 
 from llama_cpp import Llama
@@ -89,6 +89,9 @@ class _PromptBuildResult:
 
 EXCERPT_BLOCK_RE = re.compile(r"(?ms)^\[(?:Excerpt|History Match) .*?(?=^\[(?:Excerpt|History Match) |\Z)")
 
+# Default models directory: backend/models/ relative to this file
+_DEFAULT_MODELS_DIR = Path(__file__).resolve().parent / "models"
+
 
 def _estimate_text_tokens(text: str) -> int:
     words = len((text or "").split())
@@ -100,9 +103,15 @@ def _estimate_text_tokens(text: str) -> int:
 def load_llm_config_from_env() -> LLMConfig:
     cpu_count = os.cpu_count() or 4
     default_threads = max(1, cpu_count // 2)
+    raw_path = (os.getenv("LLM_MODEL_PATH") or "").strip()
+    # Resolve relative path: try as-is first, then by filename inside backend/models/
+    if raw_path and not Path(raw_path).is_file():
+        _candidate = _DEFAULT_MODELS_DIR / Path(raw_path).name
+        if _candidate.is_file():
+            raw_path = str(_candidate)
     return LLMConfig(
         enabled=_parse_bool_env("LLM_ENABLED", False),
-        model_path=(os.getenv("LLM_MODEL_PATH") or "").strip(),
+        model_path=raw_path,
         n_ctx=_parse_int_env("LLM_N_CTX", 2048, minimum=256),
         n_threads=_parse_int_env("LLM_N_THREADS", default_threads, minimum=1),
         max_tokens=_parse_int_env("LLM_MAX_TOKENS", 512, minimum=1),
@@ -128,6 +137,24 @@ class LLMService:
         if not model_path:
             return False
         return Path(model_path).exists()
+
+    def list_available_models(self) -> list[dict]:
+        """Return all *.gguf files in the models directory with active-model metadata."""
+        active_raw = self._config.model_path.strip()
+        try:
+            active_path = Path(active_raw).resolve() if active_raw else None
+        except Exception:
+            active_path = None
+        if not _DEFAULT_MODELS_DIR.is_dir():
+            return []
+        results = []
+        for p in sorted(_DEFAULT_MODELS_DIR.glob("*.gguf")):
+            results.append({
+                "filename": p.name,
+                "size_bytes": p.stat().st_size,
+                "active": (p.resolve() == active_path),
+            })
+        return results
 
     def generate_reply(
         self,
@@ -744,6 +771,25 @@ class LLMService:
                 except Exception as exc:
                     raise LLMServiceError(f"Failed to load LLM model: {exc}") from exc
             return self._llm
+
+    def reload(self, model_path: str) -> None:
+        """Replace the loaded model with a new GGUF file. Thread-safe."""
+        with self._load_lock:
+            self._llm = None  # allow GC before allocating new model
+            self._config = _dc_replace(self._config, model_path=model_path)
+            try:
+                extra: dict = {}
+                if self._config.use_chat_api:
+                    extra["chat_format"] = "chatml"
+                self._llm = Llama(
+                    model_path=model_path,
+                    n_ctx=self._config.n_ctx,
+                    n_threads=self._config.n_threads,
+                    verbose=False,
+                    **extra,
+                )
+            except Exception as exc:
+                raise LLMServiceError(f"Failed to load model '{model_path}': {exc}") from exc
 
     def _resolve_model_path(self) -> Path:
         model_path = self._config.model_path.strip()

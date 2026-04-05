@@ -64,6 +64,10 @@ backend/uploads/
 *.pt
 *.pth
 
+# Models directory — never commit GGUF files, preserve the directory
+backend/models/*
+!backend/models/.gitkeep
+
 # ── OS ────────────────────────────────────────────────────────
 .DS_Store
 .DS_Store?
