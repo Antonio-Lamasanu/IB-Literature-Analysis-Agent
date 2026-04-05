@@ -52,22 +52,31 @@ def noise_check(
         None  — inconclusive, LLM comparison needed
     """
     if not chunks_a and not chunks_b:
+        logger.debug("noise_check: both chunk lists empty → inconclusive")
         return None
-    density_a = sum(_noise_density(c) for c in chunks_a) / max(1, len(chunks_a))
-    density_b = sum(_noise_density(c) for c in chunks_b) / max(1, len(chunks_b))
+    # If either side is empty we can't compare fairly — defer to LLM
+    if not chunks_a or not chunks_b:
+        logger.debug("noise_check: one chunk list empty (a=%d b=%d) → inconclusive", len(chunks_a), len(chunks_b))
+        return None
+
+    density_a = sum(_noise_density(c) for c in chunks_a) / len(chunks_a)
+    density_b = sum(_noise_density(c) for c in chunks_b) / len(chunks_b)
+
+    logger.debug("noise_check: density_a=%.4f density_b=%.4f", density_a, density_b)
 
     # If both are very clean, heuristic can't distinguish — defer to LLM
     if density_a < 0.005 and density_b < 0.005:
-        return None
-
-    if density_a == 0.0 and density_b == 0.0:
+        logger.debug("noise_check: both clean (< 0.005) → inconclusive")
         return None
 
     ratio = (density_b + 1e-9) / (density_a + 1e-9)
     if ratio > 3.0:
+        logger.debug("noise_check: ratio=%.2f → a wins (b has 3× more noise)", ratio)
         return "a"  # b has 3× more noise → a wins
     if ratio < (1.0 / 3.0):
+        logger.debug("noise_check: ratio=%.2f → b wins (a has 3× more noise)", ratio)
         return "b"  # a has 3× more noise → b wins
+    logger.debug("noise_check: ratio=%.2f → inconclusive (within 3× band)", ratio)
     return None
 
 
@@ -124,6 +133,16 @@ def llm_score(
         logger.warning("quality.llm_score: inference failed: %s", exc)
 
     return 5.0, 5.0  # tie → keep existing
+
+
+def compute_noise_densities(
+    chunks_a: list[str],
+    chunks_b: list[str],
+) -> tuple[float, float]:
+    """Return (density_a, density_b) for debug display. Lower = cleaner (0.0 = no noise)."""
+    da = sum(_noise_density(c) for c in chunks_a) / len(chunks_a) if chunks_a else 0.0
+    db = sum(_noise_density(c) for c in chunks_b) / len(chunks_b) if chunks_b else 0.0
+    return da, db
 
 
 def get_text_samples(text: str, n: int = 10, tokens_per_sample: int = 400) -> list[str]:

@@ -89,6 +89,23 @@ class _PromptBuildResult:
 
 EXCERPT_BLOCK_RE = re.compile(r"(?ms)^\[(?:Excerpt|History Match) .*?(?=^\[(?:Excerpt|History Match) |\Z)")
 
+_RAW_STOP_TOKENS = [
+    "\nQUESTION:",
+    "\nCONVERSATION SO FAR:",
+    "\nDOCUMENT EXCERPTS:",
+    "\n---",
+    "\nAssistant:",
+    "---\n",
+]
+
+_GARBAGE_TAIL_RE = re.compile(r"(?:\n---|\nAssistant:).*", re.DOTALL)
+
+
+def _clean_raw_reply(text: str) -> str:
+    """Strip spurious continuation text that stop tokens may have missed."""
+    return _GARBAGE_TAIL_RE.sub("", text).strip()
+
+
 # Default models directory: backend/models/ relative to this file
 _DEFAULT_MODELS_DIR = Path(__file__).resolve().parent / "models"
 
@@ -333,10 +350,10 @@ class LLMService:
                 temperature=self._config.temperature,
                 top_p=0.9,
                 repeat_penalty=1.1,
-                stop=["\nQUESTION:", "\nCONVERSATION SO FAR:", "\nDOCUMENT EXCERPTS:"],
+                stop=_RAW_STOP_TOKENS,
             )
         inference_seconds = time.perf_counter() - inference_started
-        reply = output["choices"][0]["text"].strip()
+        reply = _clean_raw_reply(output["choices"][0]["text"])
         if not reply:
             raise LLMServiceError("Model returned an empty response.")
         return LLMInferenceResult(
@@ -361,7 +378,7 @@ class LLMService:
                 temperature=self._config.temperature,
                 top_p=0.9,
                 repeat_penalty=1.1,
-                stop=["\nQUESTION:", "\nCONVERSATION SO FAR:", "\nDOCUMENT EXCERPTS:"],
+                stop=_RAW_STOP_TOKENS,
                 stream=True,
             )
             for chunk in stream:
@@ -371,7 +388,7 @@ class LLMService:
                     yield token
 
         inference_seconds = time.perf_counter() - inference_started
-        full_reply = "".join(tokens).strip()
+        full_reply = _clean_raw_reply("".join(tokens))
         if not full_reply:
             raise LLMServiceError("Model returned an empty response.")
         return LLMInferenceResult(
@@ -639,7 +656,7 @@ class LLMService:
                 temperature=self._config.temperature,
                 top_p=0.9,
                 repeat_penalty=1.1,
-                stop=["\nQUESTION:", "\nCONVERSATION SO FAR:", "\nDOCUMENT EXCERPTS:"],
+                stop=_RAW_STOP_TOKENS,
                 stream=True,
             )
             for chunk in stream:
@@ -649,7 +666,7 @@ class LLMService:
                     yield token
 
         inference_seconds = time.perf_counter() - inference_started
-        full_reply = "".join(tokens).strip()
+        full_reply = _clean_raw_reply("".join(tokens))
         if not full_reply:
             raise LLMServiceError("Model returned an empty response.")
         return LLMInferenceResult(

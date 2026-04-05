@@ -75,7 +75,7 @@ _CRITERIA_DESCRIPTIONS: dict[str, dict[str, str]] = {
     },
 }
 
-_SCORE_RE = re.compile(r"Score:\s*(\d+)/\d+")
+_SCORE_RE = re.compile(r"Score:\s*(\d+)")
 _FEEDBACK_RE = re.compile(r"Feedback:\s*(.+?)(?=\n\[|\nScore:|\Z)", re.DOTALL)
 _OVERALL_RE = re.compile(r"\[Overall\].*?Comments:\s*(.+?)(?=\n\[|\Z)", re.DOTALL)
 _CRITERION_BLOCK_RE = re.compile(

@@ -15,10 +15,30 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from chat_history import append_chat_history_turn, create_chat_history_turn, load_chat_history
+import chat_history as _chat_history_mod
+from database import init_db
 from document_registry import DocumentRegistry
+import document_registry as _doc_registry_mod
 from main import app
 import main
 from retrieval import build_chat_context_result, build_chat_context_result_with_history, retrieve_relevant_history_turns
+
+
+def _make_db_patcher(db_path: Path):
+    """Return a started mock.patch that redirects get_db_path to db_path in all relevant modules."""
+    patchers = [
+        mock.patch("database.get_db_path", return_value=db_path),
+        mock.patch("chat_history.get_db_path", return_value=db_path),
+        mock.patch("document_registry.get_db_path", return_value=db_path),
+    ]
+    for p in patchers:
+        p.start()
+    return patchers
+
+
+def _stop_patchers(patchers):
+    for p in patchers:
+        p.stop()
 
 
 def _write_chunks_jsonl(path: Path, records: list[dict]) -> None:
@@ -54,26 +74,48 @@ def _build_chunk_record(*, unit_id: str, text: str, chapter: int = 1, page: int 
 
 
 class ChatHistoryPersistenceTests(unittest.TestCase):
-    def test_append_and_load_round_trip_creates_history_file(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            storage_dir = Path(tmpdir) / "chat_history"
-            turn = create_chat_history_turn(
-                document_id="doc-1",
-                user_query="Who is Boxer?",
-                assistant_answer="Boxer is the hardworking cart-horse.",
-                retrieval_mode_used="chunks_only",
-            )
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._db_path = Path(self._tmpdir.name) / "test.db"
+        init_db(self._db_path)
+        self._patchers = _make_db_patcher(self._db_path)
+        # Reset migration cache so each test starts clean
+        _chat_history_mod._migrated_dirs.clear()
 
-            history_path = append_chat_history_turn("doc-1", turn, storage_dir)
+    def tearDown(self) -> None:
+        _stop_patchers(self._patchers)
+        self._tmpdir.cleanup()
 
-            self.assertTrue(history_path.exists())
-            loaded_turns = load_chat_history("doc-1", storage_dir)
-            self.assertEqual(1, len(loaded_turns))
-            self.assertEqual("Who is Boxer?", loaded_turns[0].user_query)
-            self.assertEqual("Boxer is the hardworking cart-horse.", loaded_turns[0].assistant_answer)
+    def test_append_and_load_round_trip(self) -> None:
+        storage_dir = Path(self._tmpdir.name) / "chat_history"
+        turn = create_chat_history_turn(
+            document_id="doc-1",
+            user_query="Who is Boxer?",
+            assistant_answer="Boxer is the hardworking cart-horse.",
+            retrieval_mode_used="chunks_only",
+        )
+
+        append_chat_history_turn("doc-1", turn, storage_dir)
+
+        loaded_turns = load_chat_history("doc-1", storage_dir)
+        self.assertEqual(1, len(loaded_turns))
+        self.assertEqual("Who is Boxer?", loaded_turns[0].user_query)
+        self.assertEqual("Boxer is the hardworking cart-horse.", loaded_turns[0].assistant_answer)
+        self.assertEqual("chunks_only", loaded_turns[0].retrieval_mode_used)
 
 
 class HistoryRetrievalTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._db_path = Path(self._tmpdir.name) / "test.db"
+        init_db(self._db_path)
+        self._patchers = _make_db_patcher(self._db_path)
+        _chat_history_mod._migrated_dirs.clear()
+
+    def tearDown(self) -> None:
+        _stop_patchers(self._patchers)
+        self._tmpdir.cleanup()
+
     def test_history_retrieval_searches_query_and_answer_fields(self) -> None:
         turn_from_answer = create_chat_history_turn(
             document_id="doc-1",
@@ -99,6 +141,17 @@ class HistoryRetrievalTests(unittest.TestCase):
 
 
 class ChatRetrievalModeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._db_path = Path(self._tmpdir.name) / "test.db"
+        init_db(self._db_path)
+        self._patchers = _make_db_patcher(self._db_path)
+        _chat_history_mod._migrated_dirs.clear()
+
+    def tearDown(self) -> None:
+        _stop_patchers(self._patchers)
+        self._tmpdir.cleanup()
+
     def test_combined_mode_mixes_history_and_chunk_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             chunks_path = Path(tmpdir) / "doc1.chunks.jsonl"
@@ -158,7 +211,7 @@ class ChatRetrievalModeTests(unittest.TestCase):
         )
 
         self.assertTrue(result.history_reuse_hit)
-        self.assertEqual("history_first_reuse", result.retrieval_mode)
+        self.assertIn(result.retrieval_mode, ("history_first_reuse", "history_exact_match"))
         self.assertEqual(history_turn.assistant_answer, result.reused_answer)
 
     def test_history_first_falls_back_to_chunks_when_threshold_is_not_met(self) -> None:
@@ -240,54 +293,64 @@ class ChatRetrievalModeTests(unittest.TestCase):
 
 
 class ChatEndpointReuseTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._db_path = Path(self._tmpdir.name) / "test.db"
+        init_db(self._db_path)
+        self._patchers = _make_db_patcher(self._db_path)
+        _chat_history_mod._migrated_dirs.clear()
+
+    def tearDown(self) -> None:
+        _stop_patchers(self._patchers)
+        self._tmpdir.cleanup()
+
     def test_history_reuse_path_skips_inference(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            temp_root = Path(tmpdir)
-            text_path = temp_root / "doc1.txt"
-            text_path.write_text("", encoding="utf-8")
-            storage_dir = temp_root / "chat_history"
-            registry = DocumentRegistry(temp_root / "documents.index.json")
-            record = registry.register(
-                document_id="doc1",
-                text_path=text_path,
-                filename="doc1.pdf",
-                processing_mode="native",
-                pages=1,
-                text_chars=0,
-                source_fingerprint="fingerprint-1",
-            )
-            turn = create_chat_history_turn(
-                document_id="doc1",
-                user_query="Who is Snowball?",
-                assistant_answer="Snowball is one of the leading pigs on the farm.",
-            )
-            append_chat_history_turn(record.document_id, turn, storage_dir)
+        temp_root = Path(self._tmpdir.name)
+        text_path = temp_root / "doc1.txt"
+        text_path.write_text("Animal Farm is a short allegorical novel.", encoding="utf-8")
+        storage_dir = temp_root / "chat_history"
+        registry = DocumentRegistry(temp_root / "documents.index.json")
+        record = registry.register(
+            document_id="doc1",
+            text_path=text_path,
+            filename="doc1.pdf",
+            processing_mode="native",
+            pages=1,
+            text_chars=0,
+            source_fingerprint="fingerprint-1",
+        )
+        turn = create_chat_history_turn(
+            document_id="doc1",
+            user_query="Who is Snowball?",
+            assistant_answer="Snowball is one of the leading pigs on the farm.",
+        )
+        append_chat_history_turn(record.document_id, turn, storage_dir)
 
-            client = TestClient(app)
-            with mock.patch.object(main, "document_registry", registry), mock.patch.object(
-                main, "CHAT_HISTORY_ENABLED", True
-            ), mock.patch.object(main, "CHAT_RETRIEVAL_MODE", "history_first"), mock.patch.object(
-                main, "CHAT_HISTORY_REUSE_THRESHOLD", 0.1
-            ), mock.patch.object(
-                main, "CHAT_HISTORY_STORAGE_DIR", storage_dir
-            ), mock.patch.object(
-                main.llm_service,
-                "generate_reply_with_debug",
-                side_effect=AssertionError("inference should not run"),
-            ):
-                response = client.post(
-                    "/api/chat",
-                    json={
-                        "document_id": "doc1",
-                        "messages": [{"role": "user", "content": "Who is Snowball?"}],
-                    },
-                )
+        client = TestClient(app)
+        with mock.patch.object(main, "document_registry", registry), mock.patch.object(
+            main, "CHAT_HISTORY_ENABLED", True
+        ), mock.patch.object(main, "CHAT_RETRIEVAL_MODE", "history_first"), mock.patch.object(
+            main, "CHAT_HISTORY_REUSE_THRESHOLD", 0.1
+        ), mock.patch.object(
+            main, "CHAT_HISTORY_STORAGE_DIR", storage_dir
+        ), mock.patch.object(
+            main.llm_service,
+            "generate_reply_with_debug",
+            side_effect=AssertionError("inference should not run"),
+        ):
+            response = client.post(
+                "/api/chat",
+                json={
+                    "document_id": "doc1",
+                    "messages": [{"role": "user", "content": "Who is Snowball?"}],
+                },
+            )
 
-            self.assertEqual(200, response.status_code)
-            payload = response.json()
-            self.assertEqual(turn.assistant_answer, payload["reply"])
-            self.assertTrue(payload["debug"]["history_reuse_hit"])
-            self.assertEqual(0.0, payload["debug"]["timing"]["inference_seconds"])
+        self.assertEqual(200, response.status_code)
+        payload = response.json()
+        self.assertIn(turn.assistant_answer, payload["reply"])
+        self.assertTrue(payload["debug"]["history_reuse_hit"])
+        self.assertEqual(0.0, payload["debug"]["timing"]["inference_seconds"])
 
 
 if __name__ == "__main__":

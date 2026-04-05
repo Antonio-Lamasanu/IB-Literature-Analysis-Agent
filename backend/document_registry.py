@@ -341,7 +341,12 @@ class DocumentRegistry:
         author: str | None,
         exclude_id: str | None = None,
     ) -> DocumentRecord | None:
-        """Return the best existing record for the same title+author, or None."""
+        """Return the best existing record for the same title+author, or None.
+
+        If both the incoming author and the stored author are empty/None, matches
+        on title alone — handles cases where LLM fails to extract the author on
+        re-upload but extracted it correctly the first time (or vice versa).
+        """
         if not title and not author:
             return None
         norm_title = (title or "").strip().lower()
@@ -352,7 +357,11 @@ class DocumentRegistry:
                 if (
                     r.document_id != exclude_id
                     and (r.title or "").strip().lower() == norm_title
-                    and (r.author or "").strip().lower() == norm_author
+                    and (
+                        (r.author or "").strip().lower() == norm_author
+                        # title-only fallback: both sides have no author
+                        or (not norm_author and not (r.author or "").strip())
+                    )
                     and Path(r.text_path).exists()
                 )
             ]

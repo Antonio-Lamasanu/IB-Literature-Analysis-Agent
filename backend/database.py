@@ -13,6 +13,8 @@ from pathlib import Path
 
 _DEFAULT_DB_DIR = Path(__file__).parent / "outputs"
 
+_USEFUL_DIR = Path(__file__).parent.parent / "useful"
+
 _DDL = """
 CREATE TABLE IF NOT EXISTS documents (
     document_id                   TEXT PRIMARY KEY,
@@ -87,6 +89,32 @@ CREATE TABLE IF NOT EXISTS corpus_cache (
     source     TEXT NOT NULL,
     fetched_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    session_id   TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL,
+    document_id  TEXT NOT NULL,
+    mode         TEXT NOT NULL CHECK(mode IN ('learn', 'exam')),
+    name         TEXT NOT NULL DEFAULT 'New Session',
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_doc
+    ON chat_sessions(user_id, document_id, mode, created_at);
+
+CREATE TABLE IF NOT EXISTS paper1_passages (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    title            TEXT NOT NULL,
+    author           TEXT NOT NULL,
+    year             INTEGER,
+    passage          TEXT NOT NULL,
+    guiding_question TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS paper2_questions (
+    id   INTEGER PRIMARY KEY,
+    text TEXT NOT NULL
+);
 """
 
 
@@ -117,8 +145,46 @@ def get_connection(db_path: str | Path | None = None):
         conn.close()
 
 
+def _seed_paper_subjects(conn: sqlite3.Connection) -> None:
+    """Seed paper1_passages and paper2_questions from JSON files if the tables are empty."""
+    import json
+
+    if conn.execute("SELECT COUNT(*) FROM paper1_passages").fetchone()[0] == 0:
+        p1_path = _USEFUL_DIR / "paper1_sub.json"
+        if p1_path.exists():
+            entries = json.loads(p1_path.read_text(encoding="utf-8"))
+            conn.executemany(
+                "INSERT INTO paper1_passages (title, author, year, passage, guiding_question) VALUES (?,?,?,?,?)",
+                [(e["title"], e["author"], e.get("year"), e["passage"], e["guiding_question"]) for e in entries],
+            )
+
+    if conn.execute("SELECT COUNT(*) FROM paper2_questions").fetchone()[0] == 0:
+        p2_path = _USEFUL_DIR / "paper2_sub.json"
+        if p2_path.exists():
+            entries = json.loads(p2_path.read_text(encoding="utf-8"))
+            conn.executemany(
+                "INSERT INTO paper2_questions (id, text) VALUES (?,?)",
+                [(e["id"], e["text"]) for e in entries],
+            )
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Apply incremental schema migrations that cannot be expressed in CREATE TABLE IF NOT EXISTS."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_turns)").fetchall()}
+    if "session_id" not in cols:
+        conn.execute("ALTER TABLE chat_turns ADD COLUMN session_id TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chat_turns_session ON chat_turns(session_id, created_at)"
+        )
+    _seed_paper_subjects(conn)
+    sess_cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_sessions)").fetchall()}
+    if "metadata" not in sess_cols:
+        conn.execute("ALTER TABLE chat_sessions ADD COLUMN metadata TEXT")
+
+
 def init_db(db_path: str | Path | None = None) -> None:
     """Create all tables if they don't exist. Safe to call multiple times."""
     path = db_path if db_path is not None else get_db_path()
     with get_connection(path) as conn:
         conn.executescript(_DDL)
+        _run_migrations(conn)

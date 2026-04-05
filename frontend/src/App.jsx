@@ -516,6 +516,60 @@ body {
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .spacer { margin-top: 14px; }
 
+/* ── Sessions sidebar ── */
+.learn-with-sessions { display: grid; grid-template-columns: 210px 1fr; gap: 16px; align-items: start; }
+.sessions-sidebar {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px;
+  position: sticky; top: 80px;
+}
+.sessions-sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px; font-size: 0.75rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+}
+.sessions-list { display: flex; flex-direction: column; gap: 2px; }
+.session-item {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 8px; border-radius: var(--radius-sm);
+  cursor: pointer; font-size: 0.82rem; color: var(--text-2);
+  transition: background 0.1s;
+}
+.session-item:hover { background: var(--surface-2); }
+.session-item.active { background: var(--accent); color: #fff; }
+.session-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-turn-badge {
+  font-size: 0.7rem; background: var(--surface-3);
+  border-radius: 10px; padding: 1px 6px; flex-shrink: 0;
+}
+.session-item.active .session-turn-badge { background: rgba(255,255,255,.25); }
+@keyframes session-pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+.session-loading-dot { font-size:0.55rem; color:var(--accent); animation:session-pulse 1s ease-in-out infinite; flex-shrink:0; margin-right:2px; }
+.session-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.session-icon-btn {
+  background: none; border: none; cursor: pointer; padding: 2px 4px;
+  font-size: 0.75rem; color: inherit; opacity: 0.6; border-radius: 3px;
+}
+.session-icon-btn:hover { opacity: 1; background: rgba(0,0,0,0.08); }
+.session-item.active .session-icon-btn:hover { background: rgba(255,255,255,0.2); }
+.session-rename-row { display: flex; gap: 4px; padding: 4px 0; }
+.session-rename-input {
+  flex: 1; font-size: 0.82rem; padding: 3px 6px;
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text);
+}
+.msg-warning {
+  background: #fef9c3; color: #78350f;
+  border: 1px solid #fde68a; border-radius: var(--radius-sm);
+  padding: 8px 12px; font-size: 0.84rem;
+}
+[data-theme="dark"] .msg-warning { background: #422006; color: #fde68a; border-color: #78350f; }
+
+@media (max-width: 760px) {
+  .learn-with-sessions { grid-template-columns: 1fr; }
+  .sessions-sidebar { position: static; }
+}
+
 @media (max-width: 640px) {
   .page { padding: 20px 16px; }
   .app-header { padding: 0 14px; }
@@ -529,6 +583,13 @@ body {
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  // ── User ID (persistent, browser-local) ───────────────────────────────────
+  const [userId] = useState(() => {
+    let id = localStorage.getItem("ib_user_id");
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem("ib_user_id", id); }
+    return id;
+  });
+
   // ── Navigation & Theme ────────────────────────────────────────────────────
   const [activePage, setActivePage] = useState("dashboard");
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "auto");
@@ -553,6 +614,7 @@ export default function App() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [uploadError, setUploadError] = useState("");
   const [result, setResult] = useState(null);
+  const [uploadQualityDebug, setUploadQualityDebug] = useState(null);
 
   // ── Docs & LLM ───────────────────────────────────────────────────────────
   const [availableDocs, setAvailableDocs] = useState([]);
@@ -565,14 +627,27 @@ export default function App() {
   const [activeModel, setActiveModel] = useState(null);
   const [modelSwitching, setModelSwitching] = useState(false);
   const [modelError, setModelError] = useState("");
+  const [sessionModels, setSessionModels] = useState(() => new Map());
 
-  // ── Chat State ────────────────────────────────────────────────────────────
-  const [chatMessages, setChatMessages] = useState([]);
+  // ── Chat State (per-session maps) ─────────────────────────────────────────
+  // Keys are session_id strings or "__nosession__" for no-session chats.
+  const [sessionChats, setSessionChats] = useState(() => new Map());
+  const [sessionStatuses, setSessionStatuses] = useState(() => new Map());
+  const [sessionErrors, setSessionErrors] = useState(() => new Map());
+  const [sessionDebugs, setSessionDebugs] = useState(() => new Map());
   const [chatInput, setChatInput] = useState("");
-  const [chatStatus, setChatStatus] = useState("idle");
-  const [chatError, setChatError] = useState("");
-  const [chatDebug, setChatDebug] = useState(null);
   const [promptFormat, setPromptFormat] = useState(null);
+
+  // ── Session State ─────────────────────────────────────────────────────────
+  const [learnSessions, setLearnSessions] = useState([]);
+  const [activeLearnSessionId, setActiveLearnSessionId] = useState(null);
+  const [renamingSessionId, setRenamingSessionId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  // ── Exam Session State ────────────────────────────────────────────────────
+  const [examSessions, setExamSessions] = useState([]);
+  const [activeExamSessionId, setActiveExamSessionId] = useState(null);
+  const [examSessionData, setExamSessionData] = useState(() => new Map());
 
   // ── Exam State ────────────────────────────────────────────────────────────
   const [examPaperType, setExamPaperType] = useState("paper1");
@@ -602,17 +677,25 @@ export default function App() {
   const startedAtRef = useRef(null);
   const intervalRef = useRef(null);
   const downloadUrlRef = useRef(null);
+  const sessionCreatingRef = useRef(false);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const isBusy = uploadStatus === "processing" || uploadStatus === "chunking";
   const isProcessing = uploadStatus === "processing";
   const isChunking = uploadStatus === "chunking";
-  const isChatSending = chatStatus === "sending";
   const activeChatDocId = result?.documentId || selectedLearnDocId;
   const hasChatDocument = Boolean(activeChatDocId);
   const chatAvailable = llmAvailable && Boolean(activeChatDocId);
   const chunksAvailable = Boolean(result?.chunksAvailable);
   const modesAvailable = availableDocs.length > 0 || Boolean(result?.documentId);
+
+  // Per-session chat accessors
+  const _sessionKey = activeLearnSessionId ?? "__nosession__";
+  const chatMessages = sessionChats.get(_sessionKey) ?? [];
+  const chatStatus = sessionStatuses.get(_sessionKey) ?? "idle";
+  const chatError = sessionErrors.get(_sessionKey) ?? "";
+  const chatDebug = sessionDebugs.get(_sessionKey) ?? null;
+  const isChatSending = chatStatus === "sending";
 
   // ── On Mount ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -646,6 +729,16 @@ export default function App() {
     return () => { if (downloadUrlRef.current) { URL.revokeObjectURL(downloadUrlRef.current); downloadUrlRef.current = null; } };
   }, []);
 
+  // Auto-load (or create) a session when navigating to Learn with a doc pre-selected
+  // (e.g. via the "Learn" button in the Library page).
+  useEffect(() => {
+    if (activePage === "learn" && selectedLearnDocId && !activeLearnSessionId && learnSessions.length === 0) {
+      if (sessionCreatingRef.current) return;
+      sessionCreatingRef.current = true;
+      _loadOrCreateSession(selectedLearnDocId).finally(() => { sessionCreatingRef.current = false; });
+    }
+  }, [activePage, selectedLearnDocId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Reset helpers ──────────────────────────────────────────────────────────
   const resetExam = () => {
     setExamStep("setup");
@@ -670,16 +763,234 @@ export default function App() {
   const resetResult = () => {
     if (downloadUrlRef.current) { URL.revokeObjectURL(downloadUrlRef.current); downloadUrlRef.current = null; }
     setResult(null);
+    setUploadQualityDebug(null);
     setSelectedLearnDocId(null);
     resetExam();
   };
 
-  const resetChat = () => {
-    setChatMessages([]);
+  const resetChat = (keyOverride) => {
+    const key = keyOverride ?? (_sessionKey);
     setChatInput("");
-    setChatStatus("idle");
-    setChatError("");
-    setChatDebug(null);
+    setSessionChats((prev) => { const m = new Map(prev); m.delete(key); return m; });
+    setSessionStatuses((prev) => { const m = new Map(prev); m.delete(key); return m; });
+    setSessionErrors((prev) => { const m = new Map(prev); m.delete(key); return m; });
+    setSessionDebugs((prev) => { const m = new Map(prev); m.delete(key); return m; });
+  };
+
+  const CHAT_MAX_MESSAGES = 10;
+
+  // ── Session helpers ────────────────────────────────────────────────────────
+  const loadLearnSessions = async (documentId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions?user_id=${encodeURIComponent(userId)}&document_id=${encodeURIComponent(documentId)}&mode=learn`);
+      if (!res.ok) return [];
+      const sessions = await res.json();
+      setLearnSessions(sessions);
+      return sessions;
+    } catch { return []; }
+  };
+
+  const createLearnSession = async (documentId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, document_id: documentId, mode: "learn" }),
+      });
+      if (!res.ok) return null;
+      const session = await res.json();
+      setLearnSessions((prev) => [session, ...prev]);
+      setActiveLearnSessionId(session.session_id);
+      return session;
+    } catch { return null; }
+  };
+
+  const loadSessionHistory = async (sessionId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}/turns`);
+      if (!res.ok) return;
+      const turns = await res.json();
+      const msgs = [];
+      for (const t of turns) {
+        msgs.push({ role: "user", content: t.user_query });
+        msgs.push({ role: "assistant", content: t.assistant_answer });
+      }
+      // Only overwrite if the session has no in-progress or stored messages
+      setSessionChats((prev) => {
+        if ((prev.get(sessionId) ?? []).length > 0) return prev;
+        const m = new Map(prev); m.set(sessionId, msgs); return m;
+      });
+      setSessionErrors((prev) => { const m = new Map(prev); m.delete(sessionId); return m; });
+      setSessionDebugs((prev) => { const m = new Map(prev); m.delete(sessionId); return m; });
+    } catch { /* non-critical */ }
+  };
+
+  const _loadOrCreateSession = async (docId) => {
+    const sessions = await loadLearnSessions(docId);
+    if (sessions.length > 0) {
+      setActiveLearnSessionId(sessions[0].session_id);
+      await loadSessionHistory(sessions[0].session_id);
+    } else {
+      await createLearnSession(docId);
+    }
+  };
+
+  const onSelectLearnSession = async (sessionId) => {
+    setActiveLearnSessionId(sessionId);
+    setRenamingSessionId(null);
+    // Don't wipe state for other sessions — just switch the active view.
+    // Load history only if we have nothing stored for this session yet.
+    await loadSessionHistory(sessionId);
+  };
+
+  const onRenameSession = async (sessionId) => {
+    const name = renameValue.trim();
+    if (!name) { setRenamingSessionId(null); return; }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) return;
+      setLearnSessions((prev) => prev.map((s) => s.session_id === sessionId ? { ...s, name } : s));
+    } catch { /* non-critical */ }
+    setRenamingSessionId(null);
+  };
+
+  const onDeleteSession = async (sessionId) => {
+    if (!window.confirm("Delete this session and all its messages?")) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+      if (!res.ok) return;
+      setLearnSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
+      // Clean up per-session state maps
+      setSessionChats((prev) => { const m = new Map(prev); m.delete(sessionId); return m; });
+      setSessionStatuses((prev) => { const m = new Map(prev); m.delete(sessionId); return m; });
+      setSessionErrors((prev) => { const m = new Map(prev); m.delete(sessionId); return m; });
+      setSessionDebugs((prev) => { const m = new Map(prev); m.delete(sessionId); return m; });
+      setSessionModels((prev) => { const m = new Map(prev); m.delete(sessionId); return m; });
+      if (activeLearnSessionId === sessionId) {
+        setActiveLearnSessionId(null);
+      }
+    } catch { /* non-critical */ }
+  };
+
+  // ── Exam Sessions ──────────────────────────────────────────────────────────
+  const loadExamSessions = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions?user_id=${encodeURIComponent(userId)}&document_id=__exam__&mode=exam`);
+      if (!res.ok) return [];
+      const sessions = await res.json();
+      setExamSessions(sessions);
+      return sessions;
+    } catch { return []; }
+  };
+
+  const createExamSession = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, document_id: "__exam__", mode: "exam", name: "Exam Session" }),
+      });
+      if (!res.ok) return null;
+      const session = await res.json();
+      setExamSessions((prev) => [session, ...prev]);
+      setActiveExamSessionId(session.session_id);
+      return session;
+    } catch { return null; }
+  };
+
+  const saveExamState = (sessionId) => {
+    if (!sessionId) return;
+    const snapshot = {
+      paperType: examPaperType, step: examStep, passage: examPassage,
+      questionText: examQuestionText, selectedDocIds: examSelectedDocIds,
+      answer: examAnswer, contextMode: examContextMode, grading: examGrading,
+      gradingStatus: examGradingStatus, debug: examDebug,
+      feedbacks: examFeedbacks, feedbackStatus: examFeedbackStatus,
+      tokenDebug: examTokenDebug,
+    };
+    setExamSessionData((prev) => { const m = new Map(prev); m.set(sessionId, snapshot); return m; });
+    fetch(`${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}/metadata`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ metadata: snapshot }),
+    }).catch(() => {});
+  };
+
+  const _restoreExamSnapshot = (md) => {
+    if (!md) return;
+    setExamPaperType(md.paperType || "paper1");
+    setExamStep(md.step || "setup");
+    setExamPassage(md.passage || "");
+    setExamQuestionText(md.questionText || "");
+    setExamSelectedDocIds(md.selectedDocIds || []);
+    setExamAnswer(md.answer || "");
+    setExamContextMode(md.contextMode || "chunks");
+    setExamGrading(md.grading || null);
+    setExamGradingStatus(md.gradingStatus || "idle");
+    setExamDebug(md.debug || null);
+    setExamFeedbacks(md.feedbacks || {});
+    setExamFeedbackStatus(md.feedbackStatus || "idle");
+    setExamTokenDebug(md.tokenDebug || null);
+  };
+
+  const onSelectExamSession = (sessionId) => {
+    if (activeExamSessionId) saveExamState(activeExamSessionId);
+    setActiveExamSessionId(sessionId);
+    const stored = examSessionData.get(sessionId);
+    if (stored) {
+      _restoreExamSnapshot(stored);
+    } else {
+      resetExam();
+      fetch(`${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((sess) => {
+          if (!sess?.metadata) return;
+          let md;
+          try { md = typeof sess.metadata === "string" ? JSON.parse(sess.metadata) : sess.metadata; }
+          catch { return; }
+          setExamSessionData((prev) => { const m = new Map(prev); m.set(sessionId, md); return m; });
+          _restoreExamSnapshot(md);
+        })
+        .catch(() => {});
+    }
+  };
+
+  const onRenameExamSession = async (sessionId) => {
+    const name = renameValue.trim();
+    if (!name) { setRenamingSessionId(null); return; }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) return;
+      setExamSessions((prev) => prev.map((s) => s.session_id === sessionId ? { ...s, name } : s));
+    } catch { /* non-critical */ }
+    finally { setRenamingSessionId(null); }
+  };
+
+  const onDeleteExamSession = async (sessionId) => {
+    if (!window.confirm("Delete this exam session?")) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+      if (!res.ok) return;
+      setExamSessions((prev) => {
+        const next = prev.filter((s) => s.session_id !== sessionId);
+        return next;
+      });
+      setExamSessionData((prev) => { const m = new Map(prev); m.delete(sessionId); return m; });
+      if (activeExamSessionId === sessionId) {
+        setActiveExamSessionId(null);
+        resetExam();
+        // Create a fresh session automatically
+        createExamSession();
+      }
+    } catch { /* non-critical */ }
   };
 
   // ── Model selection ────────────────────────────────────────────────────────
@@ -750,6 +1061,19 @@ export default function App() {
         chatAvailable: chatAvailableHeader === "1",
       });
       if (chatAvailableHeader === "1") setLlmAvailable(true);
+      const qd = response.headers.get("X-Quality-Decision");
+      if (qd) {
+        const scoreNewRaw = response.headers.get("X-Quality-Score-New");
+        const scoreExistingRaw = response.headers.get("X-Quality-Score-Existing");
+        setUploadQualityDebug({
+          decision: qd,
+          method: response.headers.get("X-Quality-Method") || null,
+          scoreNew: scoreNewRaw != null ? parseFloat(scoreNewRaw) : null,
+          scoreExisting: scoreExistingRaw != null ? parseFloat(scoreExistingRaw) : null,
+        });
+      } else {
+        setUploadQualityDebug(null);
+      }
       fetch(`${API_BASE_URL}/api/documents`)
         .then((r) => (r.ok ? r.json() : []))
         .then((docs) => setAvailableDocs((docs || []).filter((d) => d.chunks_available)))
@@ -815,22 +1139,35 @@ export default function App() {
     const userText = chatInput.trim();
     if (!userText) return;
 
-    const nextMessages = [...chatMessages, { role: "user", content: userText }];
-    setChatMessages(nextMessages);
+    // Capture the key at send-time so closures inside the async function always
+    // update the correct session even if the user navigates elsewhere.
+    const sendKey = activeLearnSessionId ?? "__nosession__";
+    const sendSessionId = activeLearnSessionId;
+
+    const prevMsgs = sessionChats.get(sendKey) ?? [];
+    const nextMessages = [...prevMsgs, { role: "user", content: userText }];
+    setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, nextMessages); return m; });
     setChatInput("");
-    setChatError("");
-    setChatDebug(null);
-    setChatStatus("sending");
-    setChatMessages((prev) => [...prev, { role: "assistant", content: "", streaming: true }]);
+    setSessionErrors((prev) => { const m = new Map(prev); m.delete(sendKey); return m; });
+    setSessionDebugs((prev) => { const m = new Map(prev); m.delete(sendKey); return m; });
+    setSessionStatuses((prev) => { const m = new Map(prev); m.set(sendKey, "sending"); return m; });
+    setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, [...nextMessages, { role: "assistant", content: "", streaming: true }]); return m; });
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document_id: activeChatDocId, messages: nextMessages, prompt_format: promptFormat }),
+        body: JSON.stringify({
+          document_id: activeChatDocId,
+          messages: nextMessages,
+          prompt_format: promptFormat,
+          session_id: sendSessionId,
+          user_id: userId,
+          model: sessionModels.get(sendKey) || null,
+        }),
       });
       if (!response.ok) {
-        setChatMessages((prev) => prev.slice(0, -1));
+        setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, nextMessages); return m; });
         throw new Error(await parseErrorDetail(response, "Failed to get chat response."));
       }
 
@@ -848,18 +1185,38 @@ export default function App() {
           let ev;
           try { ev = JSON.parse(line.slice(6)); } catch { continue; }
           if (ev.type === "token") {
-            setChatMessages((prev) => { const msgs = [...prev]; const last = msgs[msgs.length - 1]; msgs[msgs.length - 1] = { ...last, content: last.content + ev.text }; return msgs; });
+            setSessionChats((prev) => {
+              const m = new Map(prev);
+              const msgs = [...(m.get(sendKey) ?? [])];
+              const last = msgs[msgs.length - 1];
+              msgs[msgs.length - 1] = { ...last, content: last.content + ev.text };
+              m.set(sendKey, msgs);
+              return m;
+            });
           } else if (ev.type === "done") {
-            setChatDebug(ev.debug ? { ...ev.debug, prompt_mode: ev.prompt_mode } : null);
-            setChatMessages((prev) => { const msgs = [...prev]; const last = msgs[msgs.length - 1]; msgs[msgs.length - 1] = { ...last, streaming: false, totalSeconds: Number(ev.debug?.total_seconds) || null }; return msgs; });
+            setSessionDebugs((prev) => { const m = new Map(prev); m.set(sendKey, ev.debug ? { ...ev.debug, prompt_mode: ev.prompt_mode } : null); return m; });
+            setSessionChats((prev) => {
+              const m = new Map(prev);
+              const msgs = [...(m.get(sendKey) ?? [])];
+              const last = msgs[msgs.length - 1];
+              msgs[msgs.length - 1] = { ...last, streaming: false, totalSeconds: Number(ev.debug?.total_seconds) || null };
+              m.set(sendKey, msgs);
+              return m;
+            });
+            if (sendSessionId) {
+              setLearnSessions((prev) => prev.map((s) => s.session_id === sendSessionId ? { ...s, turn_count: (s.turn_count || 0) + 1 } : s));
+            }
           } else if (ev.type === "error") {
-            setChatMessages((prev) => prev.slice(0, -1));
+            setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, nextMessages); return m; });
             throw new Error(ev.detail || "Chat stream error.");
           }
         }
       }
-      setChatStatus("idle");
-    } catch (err) { setChatStatus("error"); setChatError(err?.message || "Unexpected error while chatting."); }
+      setSessionStatuses((prev) => { const m = new Map(prev); m.set(sendKey, "idle"); return m; });
+    } catch (err) {
+      setSessionStatuses((prev) => { const m = new Map(prev); m.set(sendKey, "error"); return m; });
+      setSessionErrors((prev) => { const m = new Map(prev); m.set(sendKey, err?.message || "Unexpected error while chatting."); return m; });
+    }
   };
 
   // ── Exam ───────────────────────────────────────────────────────────────────
@@ -878,6 +1235,7 @@ export default function App() {
         setExamQuestionText(data.question || "");
         setExamStep("writing");
         setExamDocsStatus("ready");
+        setTimeout(() => saveExamState(activeExamSessionId), 0);
       } catch (err) { setExamDocsStatus("error"); setExamDocsError(err?.message || "Failed to load Paper 1."); }
     } else {
       setExamDocsStatus("loading");
@@ -907,6 +1265,7 @@ export default function App() {
     const picked = examP2Questions[Math.floor(Math.random() * examP2Questions.length)];
     setExamQuestionText(picked.text || "");
     setExamStep("writing");
+    setTimeout(() => saveExamState(activeExamSessionId), 0);
   };
 
   const startFeedbackStreaming = async (gradingData, studentAnswer, gradingPromptTokens) => {
@@ -996,12 +1355,22 @@ export default function App() {
       setExamGradingStatus("done");
       setExamStep("done");
       startFeedbackStreaming(data, studentAnswer, data.debug?.prompt_tokens || 0);
+      setTimeout(() => saveExamState(activeExamSessionId), 0);
     } catch (err) { setExamGradingStatus("error"); setExamGradingError(err?.message || "Unexpected error during grading."); }
   };
 
   // ── Navigation helpers ─────────────────────────────────────────────────────
   const goTo = (page) => {
-    if (page === "exam") resetExam();
+    if (page === "exam") {
+      loadExamSessions().then((sessions) => {
+        if (sessions.length > 0) {
+          onSelectExamSession(sessions[0].session_id);
+        } else {
+          resetExam();
+          createExamSession();
+        }
+      });
+    }
     setActivePage(page);
   };
 
@@ -1009,20 +1378,27 @@ export default function App() {
   // RENDER HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // Model selector (used in header)
+  // Model selector (per-session)
   const recommendedTier = systemInfo?.recommended_model;
   const recommendedModel = availableModels.find((m) => getModelTier(m.filename) === recommendedTier);
 
-  const renderModelSelector = () => {
+  const renderSessionModelSelector = (sessionKey) => {
     if (availableModels.length === 0) return null;
+    const current = sessionModels.get(sessionKey) || activeModel || "";
     return (
-      <div className="model-wrap">
+      <div className="model-wrap" style={{ marginBottom: 8 }}>
         <select
           className="model-select"
-          value={activeModel || ""}
-          disabled={modelSwitching}
-          onChange={(e) => onSelectModel(e.target.value)}
-          title="Active model"
+          value={current}
+          onChange={(e) => {
+            const filename = e.target.value;
+            setSessionModels((prev) => {
+              const m = new Map(prev);
+              m.set(sessionKey, filename);
+              return m;
+            });
+          }}
+          title="Model for this session"
         >
           {availableModels.map((m) => {
             const isRec = getModelTier(m.filename) === recommendedTier;
@@ -1033,8 +1409,6 @@ export default function App() {
             );
           })}
         </select>
-        {modelSwitching && <span className="model-status">Switching…</span>}
-        {modelError && <span className="model-err">{modelError}</span>}
       </div>
     );
   };
@@ -1058,7 +1432,6 @@ export default function App() {
             </button>
           ))}
         </div>
-        {renderModelSelector()}
       </div>
     </header>
   );
@@ -1192,6 +1565,44 @@ export default function App() {
             </div>
           </div>
         )}
+        {uploadQualityDebug && (
+          <details className="dbg-details" style={{ marginTop: 10 }}>
+            <summary>▸ Quality Decision</summary>
+            <div className="dbg-body">
+              <p className="dbg-line">
+                <strong>Decision:</strong>{" "}
+                {uploadQualityDebug.decision === "fingerprint-match"
+                  ? "Reused existing chunks (identical file — SHA256 match)"
+                  : uploadQualityDebug.decision === "existing-retained"
+                  ? "Reused existing chunks (existing quality was sufficient)"
+                  : uploadQualityDebug.decision === "new-upgraded"
+                  ? "Replaced with new upload (better quality)"
+                  : "New document"}
+              </p>
+              <p className="dbg-line">
+                <strong>Method:</strong>{" "}
+                {uploadQualityDebug.method === "fingerprint" ? "Binary fingerprint (no comparison needed)"
+                  : uploadQualityDebug.method === "noise-check" ? "Noise check (heuristic)"
+                  : uploadQualityDebug.method === "llm-score" ? "LLM quality scoring"
+                  : uploadQualityDebug.method === "llm-unavailable" ? "LLM unavailable — kept existing"
+                  : uploadQualityDebug.method || "—"}
+              </p>
+              {uploadQualityDebug.scoreNew != null && uploadQualityDebug.method !== "fingerprint" && (
+                <p className="dbg-line">
+                  <strong>
+                    {uploadQualityDebug.method === "noise-check" ? "Noise density" : "Scores"}:
+                  </strong>{" "}
+                  New: {uploadQualityDebug.scoreNew.toFixed(4)}
+                  {uploadQualityDebug.method === "noise-check" ? " (lower = cleaner)" : ""} / Existing:{" "}
+                  {uploadQualityDebug.scoreExisting != null
+                    ? uploadQualityDebug.scoreExisting.toFixed(4)
+                    : "—"}
+                  {uploadQualityDebug.method === "noise-check" ? "" : " / 10"}
+                </p>
+              )}
+            </div>
+          </details>
+        )}
       </div>
 
       {/* Document list */}
@@ -1237,34 +1648,11 @@ export default function App() {
   );
 
   // ── Learn Page ─────────────────────────────────────────────────────────────
-  const renderLearn = () => (
-    <div className="learn-layout">
-      {/* Doc picker */}
-      {!result?.documentId && (
-        <div className="card">
-          <div className="section-title">Select a Work</div>
-          {availableDocs.length === 0 ? (
-            <p style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
-              No documents available. <button className="btn btn-ghost btn-sm" onClick={() => goTo("library")}>Go to Library</button>
-            </p>
-          ) : (
-            <div className="doc-pick-grid">
-              {availableDocs.map((doc) => (
-                <div
-                  key={doc.document_id}
-                  className={`doc-pick-card${selectedLearnDocId === doc.document_id ? " selected" : ""}`}
-                  onClick={() => { setSelectedLearnDocId(doc.document_id); resetChat(); }}
-                >
-                  <div className="doc-pick-name">{doc.title || doc.filename}</div>
-                  <div className="doc-pick-meta">{doc.author ? `${doc.author} · ` : ""}{doc.chunks_count} chunks</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+  const renderLearn = () => {
+    const activeSession = learnSessions.find((s) => s.session_id === activeLearnSessionId);
+    const isAtLimit = (activeSession?.turn_count ?? 0) >= CHAT_MAX_MESSAGES;
 
-      {/* Chat */}
+    const chatPanel = (
       <div className="card chat-panel">
         <div className="section-title">
           {result?.documentId ? `Chat · ${result.documentFilename || "Uploaded document"}` : selectedLearnDocId ? `Chat · ${availableDocs.find((d) => d.document_id === selectedLearnDocId)?.title || "Selected document"}` : "Chat"}
@@ -1298,11 +1686,18 @@ export default function App() {
               }
             </div>
 
+            {isAtLimit && (
+              <div className="msg-warning">
+                Maximum {CHAT_MAX_MESSAGES} messages reached — start a new session to continue.
+              </div>
+            )}
+
             <div>
+              {renderSessionModelSelector(_sessionKey)}
               <div className="pill-row">
-                <button className={`pill${promptFormat === null ? " active" : ""}`} disabled={isChatSending} onClick={() => setPromptFormat(null)}>Hybrid</button>
-                <button className={`pill${promptFormat === "rag" ? " active" : ""}`} disabled={isChatSending} onClick={() => setPromptFormat("rag")}>RAG</button>
-                <button className={`pill${promptFormat === "base_knowledge" ? " active" : ""}`} disabled={isChatSending} onClick={() => setPromptFormat("base_knowledge")}>Base Knowledge</button>
+                <button className={`pill${promptFormat === null ? " active" : ""}`} disabled={isChatSending || isAtLimit} onClick={() => setPromptFormat(null)}>Hybrid</button>
+                <button className={`pill${promptFormat === "rag" ? " active" : ""}`} disabled={isChatSending || isAtLimit} onClick={() => setPromptFormat("rag")}>RAG</button>
+                <button className={`pill${promptFormat === "base_knowledge" ? " active" : ""}`} disabled={isChatSending || isAtLimit} onClick={() => setPromptFormat("base_knowledge")}>Base Knowledge</button>
               </div>
               {promptFormat === "base_knowledge" && <p className="pill-hint">Answering from general knowledge — no document retrieval.</p>}
               {promptFormat === null && <p className="pill-hint">Auto-selects RAG or Base Knowledge based on retrieval confidence.</p>}
@@ -1311,12 +1706,12 @@ export default function App() {
             <form className="chat-form" onSubmit={onSendChat}>
               <textarea
                 className="chat-textarea"
-                placeholder="Ask something about this document…"
+                placeholder={isAtLimit ? "Start a new session to continue…" : "Ask something about this document…"}
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                disabled={isChatSending || isBusy}
+                disabled={isChatSending || isBusy || isAtLimit}
               />
-              <button className="btn" type="submit" disabled={isChatSending || isBusy || !chatInput.trim()}>
+              <button className="btn" type="submit" disabled={isChatSending || isBusy || !chatInput.trim() || isAtLimit}>
                 {isChatSending ? "Sending…" : "Send"}
               </button>
             </form>
@@ -1370,13 +1765,163 @@ export default function App() {
           </details>
         )}
       </div>
-    </div>
-  );
+    );
+
+    const sessionsSidebar = hasChatDocument && learnSessions.length > 0 && (
+      <div className="sessions-sidebar">
+        <div className="sessions-sidebar-header">
+          <span>Sessions</span>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: "0.75rem", padding: "2px 8px" }}
+            onClick={() => createLearnSession(activeChatDocId)}
+            title="New session"
+          >+ New</button>
+        </div>
+        <div className="sessions-list">
+          {learnSessions.map((s) => (
+            <div key={s.session_id}>
+              {renamingSessionId === s.session_id ? (
+                <div className="session-rename-row">
+                  <input
+                    className="session-rename-input"
+                    value={renameValue}
+                    autoFocus
+                    maxLength={100}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") onRenameSession(s.session_id); if (e.key === "Escape") setRenamingSessionId(null); }}
+                    onBlur={() => onRenameSession(s.session_id)}
+                  />
+                </div>
+              ) : (
+                <div
+                  className={`session-item${activeLearnSessionId === s.session_id ? " active" : ""}`}
+                  onClick={() => onSelectLearnSession(s.session_id)}
+                >
+                  <span className="session-item-name">{s.name || "Session"}</span>
+                  {sessionStatuses.get(s.session_id) === "sending" && (
+                    <span className="session-loading-dot" title="Loading…">●</span>
+                  )}
+                  <span className="session-turn-badge">{s.turn_count ?? 0}/{CHAT_MAX_MESSAGES}</span>
+                  <div className="session-actions" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      className="session-icon-btn"
+                      title="Rename"
+                      onClick={() => { setRenamingSessionId(s.session_id); setRenameValue(s.name || ""); }}
+                    >✎</button>
+                    <button
+                      className="session-icon-btn"
+                      title="Delete"
+                      onClick={() => onDeleteSession(s.session_id)}
+                    >✕</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="learn-layout">
+        {/* Doc picker */}
+        {!result?.documentId && (
+          <div className="card">
+            <div className="section-title">Select a Work</div>
+            {availableDocs.length === 0 ? (
+              <p style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
+                No documents available. <button className="btn btn-ghost btn-sm" onClick={() => goTo("library")}>Go to Library</button>
+              </p>
+            ) : (
+              <div className="doc-pick-grid">
+                {availableDocs.map((doc) => (
+                  <div
+                    key={doc.document_id}
+                    className={`doc-pick-card${selectedLearnDocId === doc.document_id ? " selected" : ""}`}
+                    onClick={async () => {
+                      if (sessionCreatingRef.current) return;
+                      sessionCreatingRef.current = true;
+                      setSelectedLearnDocId(doc.document_id);
+                      setActiveLearnSessionId(null);
+                      setLearnSessions([]);
+                      try {
+                        await _loadOrCreateSession(doc.document_id);
+                      } finally {
+                        sessionCreatingRef.current = false;
+                      }
+                    }}
+                  >
+                    <div className="doc-pick-name">{doc.title || doc.filename}</div>
+                    <div className="doc-pick-meta">{doc.author ? `${doc.author} · ` : ""}{doc.chunks_count} chunks</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Chat + Sessions */}
+        {sessionsSidebar ? (
+          <div className="learn-with-sessions">
+            {sessionsSidebar}
+            {chatPanel}
+          </div>
+        ) : chatPanel}
+      </div>
+    );
+  };
 
   // ── Exam Page ──────────────────────────────────────────────────────────────
-  const renderExam = () => (
+  const renderExam = () => {
+    const examSidebarEl = examSessions.length > 0 && (
+      <div className="sessions-sidebar">
+        <div className="sessions-sidebar-header">
+          <span>Sessions</span>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: "0.75rem", padding: "2px 8px" }}
+            onClick={() => { saveExamState(activeExamSessionId); createExamSession().then(() => resetExam()); }}
+            title="New session"
+          >+ New</button>
+        </div>
+        <div className="sessions-list">
+          {examSessions.map((s) => (
+            <div key={s.session_id}>
+              {renamingSessionId === s.session_id ? (
+                <div className="session-rename-row">
+                  <input
+                    className="session-rename-input"
+                    value={renameValue}
+                    autoFocus
+                    maxLength={100}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") onRenameExamSession(s.session_id); if (e.key === "Escape") setRenamingSessionId(null); }}
+                    onBlur={() => onRenameExamSession(s.session_id)}
+                  />
+                </div>
+              ) : (
+                <div
+                  className={`session-item${activeExamSessionId === s.session_id ? " active" : ""}`}
+                  onClick={() => onSelectExamSession(s.session_id)}
+                >
+                  <span className="session-item-name">{s.name || "Session"}</span>
+                  <div className="session-actions" onClick={(e) => e.stopPropagation()}>
+                    <button className="session-icon-btn" title="Rename" onClick={() => { setRenamingSessionId(s.session_id); setRenameValue(s.name || ""); }}>✎</button>
+                    <button className="session-icon-btn" title="Delete" onClick={() => onDeleteExamSession(s.session_id)}>✕</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+    return (
     <div className="exam-layout">
-      <div className="card exam-panel">
+      <div className={examSidebarEl ? "learn-with-sessions" : ""}>
+        {examSidebarEl}
+        <div className="card exam-panel">
         <div className="paper-tabs">
           <button
             className={`paper-tab${examPaperType === "paper1" ? " active" : ""}`}
@@ -1584,8 +2129,10 @@ export default function App() {
           </div>
         )}
       </div>
+      </div>
     </div>
-  );
+    );
+  };
 
   // ─────────────────────────────────────────────────────────────────────────────
   // ROOT RENDER

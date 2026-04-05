@@ -7,6 +7,7 @@ import uuid
 import hashlib
 import logging
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -23,6 +24,7 @@ from chat_history import (
     embed_and_save_history,
     load_chat_history,
 )
+import sessions as _sessions
 import exam_service
 from exam_service import (
     CRITERIA_BY_PAPER,
@@ -166,6 +168,8 @@ CHUNK_EMBED_EXCLUDE_SECTION_TYPES = [
 CHUNK_DROP_NOISE_PARAS = parse_bool_env("CHUNK_DROP_NOISE_PARAS", True)
 KEEP_OUTPUT_FILES = parse_bool_env("KEEP_OUTPUT_FILES", False)
 CHAT_MAX_HISTORY_MESSAGES = parse_int_env("CHAT_MAX_HISTORY_MESSAGES", 10)
+LLM_MAX_CONCURRENT = parse_int_env("LLM_MAX_CONCURRENT", 1)
+LLM_MAX_QUEUE_DEPTH = parse_int_env("LLM_MAX_QUEUE_DEPTH", 4)
 CHAT_RETRIEVE_CANDIDATES = parse_int_env("CHAT_RETRIEVE_CANDIDATES", DEFAULT_RETRIEVE_CANDIDATES)
 CHAT_CONTEXT_MAX_EXCERPTS = parse_int_env("CHAT_CONTEXT_MAX_EXCERPTS", DEFAULT_MAX_EXCERPTS)
 CHAT_CONTEXT_TOKEN_BUDGET = parse_int_env("CHAT_CONTEXT_TOKEN_BUDGET", DEFAULT_CONTEXT_TOKEN_BUDGET)
@@ -185,8 +189,6 @@ _exam_history_storage_dir_env = (os.getenv("EXAM_HISTORY_STORAGE_DIR") or "").st
 EXAM_HISTORY_STORAGE_DIR = Path(
     _exam_history_storage_dir_env or str(DEFAULT_EXAM_HISTORY_STORAGE_DIR)
 ).expanduser()
-REUSE_PROCESSED_PDFS = parse_bool_env("REUSE_PROCESSED_PDFS", False)
-
 exam_service.set_grading_token_budget(EXAM_CONTEXT_TOKEN_BUDGET)
 
 WIPE_CHAT_HISTORY_ON_START = parse_bool_env("WIPE_CHAT_HISTORY_ON_START", False)
@@ -254,6 +256,13 @@ app.add_middleware(
         "X-Chunk-Schema-Version",
         "X-Chunk-Target-Tokens",
         "X-Chunk-Overlap-Tokens",
+        "X-Quality-Decision",
+        "X-Quality-Method",
+        "X-Quality-Existing-Doc",
+        "X-Quality-Score-New",
+        "X-Quality-Score-Existing",
+        "X-Title",
+        "X-Author",
     ],
 )
 
@@ -261,6 +270,36 @@ configure_tesseract(os.getenv("TESSERACT_CMD"))
 
 if WIPE_CHAT_HISTORY_ON_START:
     _wipe_chat_history_dir(CHAT_HISTORY_STORAGE_DIR)
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    app.state.llm_semaphore = asyncio.Semaphore(LLM_MAX_CONCURRENT)
+    app.state.llm_queue_count = 0
+
+
+@asynccontextmanager
+async def _acquire_llm_slot():
+    """Gate LLM inference calls to prevent concurrent access to the local model.
+
+    Skips gating for RemoteLLMService (external HTTP server is concurrency-safe).
+    Returns 503 when the queue is full rather than queuing indefinitely.
+    """
+    from llm_service import RemoteLLMService as _RemoteLLMService
+    if isinstance(llm_service, _RemoteLLMService):
+        yield
+        return
+    if app.state.llm_queue_count >= LLM_MAX_QUEUE_DEPTH:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Inference queue is full. Please wait a moment and try again.",
+        )
+    app.state.llm_queue_count += 1
+    try:
+        async with app.state.llm_semaphore:
+            yield
+    finally:
+        app.state.llm_queue_count -= 1
 
 
 @app.get("/api/health")
@@ -340,6 +379,9 @@ class ChatRequest(BaseModel):
     document_id: str = Field(..., min_length=1, max_length=128)
     messages: list[ChatMessage] = Field(..., min_length=1)
     prompt_format: Optional[Literal["rag", "base_knowledge"]] = None
+    session_id: Optional[str] = None
+    user_id: Optional[str] = None
+    model: Optional[str] = None  # per-request model filename for per-session model switching
 
 
 class ChatDebugTimingResponse(BaseModel):
@@ -807,84 +849,21 @@ async def process_pdf_endpoint(
             detail=f"Failed to fingerprint uploaded PDF: {exc}",
         ) from exc
 
-    if REUSE_PROCESSED_PDFS:
-        existing_record = document_registry.find_reusable_by_source_fingerprint(source_fingerprint)
-        if existing_record:
-            existing_text_path = Path(existing_record.text_path)
-            if (
-                not existing_record.chunks_available
-                or not existing_record.chunks_path
-                or not Path(existing_record.chunks_path).exists()
-            ):
-                try:
-                    existing_text = existing_text_path.read_text(encoding="utf-8").strip()
-                    if not existing_text:
-                        raise HTTPException(
-                            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Reused document text is empty; cannot generate chunks.",
-                        )
-                    existing_record, _chunk_params = await run_in_threadpool(
-                        generate_and_persist_chunks_for_record,
-                        existing_record,
-                        existing_text,
-                    )
-                except HTTPException:
-                    remove_file(upload_path)
-                    raise
-                except OSError as exc:
-                    remove_file(upload_path)
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to prepare reused document chunks: {exc}",
-                    ) from exc
-                except Exception as exc:
-                    remove_file(upload_path)
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to generate chunks for reused document: {exc}",
-                    ) from exc
-
-            logger.info(
-                "Reusing processed PDF output for fingerprint %s from document_id=%s",
-                source_fingerprint,
-                existing_record.document_id,
-            )
-            if existing_record.title is None and llm_service.is_chat_available():
-                try:
-                    existing_text = existing_text_path.read_text(encoding="utf-8")
-                    title, author = await run_in_threadpool(
-                        llm_service.extract_title_and_author, existing_text[:1500]
-                    )
-                    existing_record = document_registry.update_title_author(
-                        existing_record.document_id, title=title, author=author
-                    ) or existing_record
-                    logger.info(
-                        "Extracted title=%r author=%r for reused document_id=%s",
-                        title,
-                        author,
-                        existing_record.document_id,
-                    )
-                    background_tasks.add_task(
-                        _run_corpus_lookup, existing_record.document_id, title, author
-                    )
-                except Exception:
-                    logger.warning(
-                        "Title/author extraction failed for reused document_id=%s",
-                        existing_record.document_id,
-                    )
-            background_tasks.add_task(remove_file, upload_path)
-            download_name = f"{Path(existing_record.filename).stem}.txt"
-            return FileResponse(
-                path=existing_text_path,
-                media_type="text/plain; charset=utf-8",
-                filename=download_name,
-                background=background_tasks,
-                headers=build_document_headers(existing_record),
-            )
-
-        logger.info(
-            "No reusable processed output found for fingerprint %s; processing upload normally",
-            source_fingerprint,
+    # Fast path: exact binary duplicate → skip extraction entirely
+    _fp_match = document_registry.find_reusable_by_source_fingerprint(source_fingerprint)
+    if _fp_match and _fp_match.chunks_available and _fp_match.chunks_path and Path(_fp_match.chunks_path).exists():
+        background_tasks.add_task(remove_file, upload_path)
+        _fp_headers = build_document_headers(_fp_match)
+        _fp_headers["X-Quality-Decision"] = "fingerprint-match"
+        _fp_headers["X-Quality-Method"] = "fingerprint"
+        _fp_headers["X-Quality-Existing-Doc"] = _fp_match.document_id
+        logger.info("Fingerprint match: reusing doc %s, skipping extraction", _fp_match.document_id)
+        return FileResponse(
+            path=Path(_fp_match.text_path),
+            media_type="text/plain; charset=utf-8",
+            filename=f"{Path(_fp_match.filename).stem}.txt",
+            background=background_tasks,
+            headers=_fp_headers,
         )
 
     try:
@@ -932,8 +911,21 @@ async def process_pdf_endpoint(
                 _take = min(4, len(_new_samples))
                 _compare_new = _new_samples[-_take:] if _take else _new_samples
 
+            logger.info(
+                "Quality comparison samples: new_raw=%d existing_loaded=%d compare_new=%d compare_existing=%d",
+                len(_new_samples), len(_existing_samples), len(_compare_new), len(_existing_samples),
+            )
+            if _compare_new:
+                logger.info("Quality compare new[0] preview: %r", _compare_new[0][:120])
+            if _existing_samples:
+                logger.info("Quality compare existing[0] preview: %r", _existing_samples[0][:120])
+
             _winner = quality.noise_check(_compare_new, _existing_samples)
             _score_new, _score_existing = 5.0, 5.0
+            _quality_method = "noise-check"
+
+            # Always compute noise densities for debug display
+            _dens_new, _dens_existing = quality.compute_noise_densities(_compare_new, _existing_samples)
 
             if _winner is None:
                 if llm_service.is_chat_available():
@@ -941,8 +933,18 @@ async def process_pdf_endpoint(
                         quality.llm_score, _compare_new, _existing_samples, llm_service
                     )
                     _winner = "a" if _score_new > _score_existing else "b"
+                    _quality_method = "llm-score"
                 else:
                     _winner = "b"  # LLM unavailable → keep existing
+                    _quality_method = "llm-unavailable"
+            else:
+                # noise_check decided — expose densities as scores
+                _score_new, _score_existing = _dens_new, _dens_existing
+
+            logger.info(
+                "Quality comparison result: winner=%r method=%s score_new=%.1f score_existing=%.1f existing_doc=%s",
+                _winner, _quality_method, _score_new, _score_existing, _existing.document_id,
+            )
 
             if _winner == "b":
                 # Existing is better or tied → discard new upload
@@ -960,12 +962,18 @@ async def process_pdf_endpoint(
                         _run_corpus_lookup, _existing.document_id, _title, _author
                     )
                 _dl_name = f"{Path(_existing.filename).stem}.txt"
+                _retained_headers = build_document_headers(_existing)
+                _retained_headers["X-Quality-Decision"] = "existing-retained"
+                _retained_headers["X-Quality-Method"] = _quality_method
+                _retained_headers["X-Quality-Existing-Doc"] = _existing.document_id
+                _retained_headers["X-Quality-Score-New"] = f"{_score_new:.4f}"
+                _retained_headers["X-Quality-Score-Existing"] = f"{_score_existing:.4f}"
                 return FileResponse(
                     path=Path(_existing.text_path),
                     media_type="text/plain; charset=utf-8",
                     filename=_dl_name,
                     background=background_tasks,
-                    headers=build_document_headers(_existing),
+                    headers=_retained_headers,
                 )
 
             else:
@@ -1029,12 +1037,18 @@ async def process_pdf_endpoint(
                 background_tasks.add_task(remove_file, upload_path)
                 logger.info("Persisting quality-upgraded text file: %s", output_path)
                 record = _updated or _existing
+                _upgraded_headers = build_document_headers(record)
+                _upgraded_headers["X-Quality-Decision"] = "new-upgraded"
+                _upgraded_headers["X-Quality-Method"] = _quality_method
+                _upgraded_headers["X-Quality-Existing-Doc"] = _existing.document_id
+                _upgraded_headers["X-Quality-Score-New"] = f"{_score_new:.4f}"
+                _upgraded_headers["X-Quality-Score-Existing"] = f"{_score_existing:.4f}"
                 return FileResponse(
                     path=output_path,
                     media_type="text/plain; charset=utf-8",
                     filename=f"{Path(file.filename).stem}.txt",
                     background=background_tasks,
-                    headers=build_document_headers(record),
+                    headers=_upgraded_headers,
                 )
 
     # Normal flow: new document
@@ -1153,6 +1167,15 @@ def delete_document(document_id: str):
 async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks) -> ChatResponse:
     request_started = time.perf_counter()
     record = get_document_or_404(payload.document_id)
+    if payload.model:
+        from llm_service import _DEFAULT_MODELS_DIR as _mdl_dir
+        _svc = get_llm_service()
+        if isinstance(_svc, LLMService):
+            _fn = payload.model.strip()
+            if _fn and "/" not in _fn and "\\" not in _fn and ".." not in _fn:
+                _target = _mdl_dir / _fn
+                if _target.is_file():
+                    await run_in_threadpool(_svc.reload, str(_target))
     document_text = ""
     text_path = Path(record.text_path)
     persisted_chunks_path: Path | None = None
@@ -1191,6 +1214,15 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
             detail="Document text is empty and no persisted chunks are available; cannot chat.",
         )
 
+    # Enforce per-session message limit
+    if payload.session_id and CHAT_HISTORY_ENABLED:
+        _turn_count = await run_in_threadpool(_sessions.count_session_turns, payload.session_id)
+        if _turn_count >= CHAT_MAX_HISTORY_MESSAGES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Session message limit reached. Start a new session to continue.",
+            )
+
     # Always load history (needed for routing signal and RAG context)
     estimated_context_budget = llm_service.estimate_context_token_budget(
         messages=messages,
@@ -1207,6 +1239,7 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
             load_chat_history,
             record.document_id,
             CHAT_HISTORY_STORAGE_DIR,
+            session_id=payload.session_id,
         )
 
     # Always retrieve (top_chunk_score needed for router)
@@ -1257,10 +1290,13 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
         )
         prompt_build_seconds = time.perf_counter() - prompt_build_t0
         try:
-            inference_result: LLMInferenceResult = await run_in_threadpool(
-                llm_service.generate_raw_reply,
-                base_prompt,
-            )
+            async with _acquire_llm_slot():
+                inference_result: LLMInferenceResult = await run_in_threadpool(
+                    llm_service.generate_raw_reply,
+                    base_prompt,
+                )
+        except HTTPException:
+            raise
         except LLMDisabledError as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         except LLMNotConfiguredError as exc:
@@ -1284,6 +1320,7 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
                 user_query=latest_user_question,
                 assistant_answer=reply_text,
                 retrieval_mode_used="base_knowledge",
+                session_id=payload.session_id,
             )
             try:
                 await run_in_threadpool(
@@ -1292,6 +1329,8 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
                     turn,
                     CHAT_HISTORY_STORAGE_DIR,
                 )
+                if payload.session_id:
+                    await run_in_threadpool(_sessions.touch_session, payload.session_id)
                 background_tasks.add_task(embed_and_save_history, record.document_id, CHAT_HISTORY_STORAGE_DIR)
             except Exception as exc:
                 history_persisted = False
@@ -1338,14 +1377,17 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
         reply_text = "[Answer retrieved from chat history]\n\n" + context_result.reused_answer
     else:
         try:
-            inference_result = await run_in_threadpool(
-                llm_service.generate_reply_with_debug,
-                document_text=context_result.context,
-                messages=messages,
-                max_history_messages=max(1, CHAT_MAX_HISTORY_MESSAGES),
-                title=record.title or "",
-                author=record.author or "",
-            )
+            async with _acquire_llm_slot():
+                inference_result = await run_in_threadpool(
+                    llm_service.generate_reply_with_debug,
+                    document_text=context_result.context,
+                    messages=messages,
+                    max_history_messages=max(1, CHAT_MAX_HISTORY_MESSAGES),
+                    title=record.title or "",
+                    author=record.author or "",
+                )
+        except HTTPException:
+            raise
         except LLMDisabledError as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         except LLMNotConfiguredError as exc:
@@ -1381,6 +1423,7 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
             document_source_fingerprint=record.source_fingerprint,
             chunk_corpus_path=record.chunks_path,
             chunk_meta_path=record.chunk_meta_path,
+            session_id=payload.session_id,
         )
         try:
             await run_in_threadpool(
@@ -1389,6 +1432,8 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
                 turn,
                 CHAT_HISTORY_STORAGE_DIR,
             )
+            if payload.session_id:
+                await run_in_threadpool(_sessions.touch_session, payload.session_id)
             background_tasks.add_task(
                 embed_and_save_history,
                 record.document_id,
@@ -1465,6 +1510,15 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
     """
     request_started = time.perf_counter()
     record = get_document_or_404(payload.document_id)
+    if payload.model:
+        from llm_service import _DEFAULT_MODELS_DIR as _mdl_dir
+        _svc = get_llm_service()
+        if isinstance(_svc, LLMService):
+            _fn = payload.model.strip()
+            if _fn and "/" not in _fn and "\\" not in _fn and ".." not in _fn:
+                _target = _mdl_dir / _fn
+                if _target.is_file():
+                    await run_in_threadpool(_svc.reload, str(_target))
     document_text = ""
     text_path = Path(record.text_path)
     persisted_chunks_path: Path | None = None
@@ -1500,6 +1554,15 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
             detail="Document text is empty and no persisted chunks are available; cannot chat.",
         )
 
+    # Enforce per-session message limit
+    if payload.session_id and CHAT_HISTORY_ENABLED:
+        _turn_count_s = await run_in_threadpool(_sessions.count_session_turns, payload.session_id)
+        if _turn_count_s >= CHAT_MAX_HISTORY_MESSAGES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Session message limit reached. Start a new session to continue.",
+            )
+
     # Always load history (needed for routing signal and RAG context)
     estimated_context_budget = llm_service.estimate_context_token_budget(
         messages=messages,
@@ -1514,6 +1577,7 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
             load_chat_history,
             record.document_id,
             CHAT_HISTORY_STORAGE_DIR,
+            session_id=payload.session_id,
         )
 
     # Skip history reuse for follow-up questions (any assistant turn already in session).
@@ -1565,6 +1629,7 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
     _request_started = request_started
     _chosen_mode = chosen_mode
     _routing_reason = routing_reason
+    _session_id = payload.session_id
 
     async def _event_generator() -> AsyncGenerator[str, None]:
         yield _sse_event({
@@ -1602,24 +1667,24 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
                 except Exception as exc:
                     loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
 
-            loop.run_in_executor(None, _produce_bk)
-
             stream_result = None
-            while True:
-                kind, data = await queue.get()
-                if kind == "token":
-                    reply_text += data
-                    yield _sse_event({"type": "token", "text": data})
-                elif kind == "done":
-                    stream_result = data
-                    break
-                elif kind == "error":
-                    exc = data
-                    if isinstance(exc, (LLMDisabledError, LLMNotConfiguredError, LLMServiceError)):
-                        yield _sse_event({"type": "error", "detail": str(exc)})
-                    else:
-                        yield _sse_event({"type": "error", "detail": f"Chat inference failed: {exc}"})
-                    return
+            async with _acquire_llm_slot():
+                loop.run_in_executor(None, _produce_bk)
+                while True:
+                    kind, data = await queue.get()
+                    if kind == "token":
+                        reply_text += data
+                        yield _sse_event({"type": "token", "text": data})
+                    elif kind == "done":
+                        stream_result = data
+                        break
+                    elif kind == "error":
+                        exc = data
+                        if isinstance(exc, (LLMDisabledError, LLMNotConfiguredError, LLMServiceError)):
+                            yield _sse_event({"type": "error", "detail": str(exc)})
+                        else:
+                            yield _sse_event({"type": "error", "detail": f"Chat inference failed: {exc}"})
+                        return
 
             inference_seconds = stream_result.inference_seconds if stream_result else 0.0
             if stream_result:
@@ -1632,6 +1697,7 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
                     user_query=_latest_user_question,
                     assistant_answer=reply_text,
                     retrieval_mode_used="base_knowledge",
+                    session_id=_session_id,
                 )
                 try:
                     await run_in_threadpool(
@@ -1640,6 +1706,8 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
                         turn,
                         CHAT_HISTORY_STORAGE_DIR,
                     )
+                    if _session_id:
+                        await run_in_threadpool(_sessions.touch_session, _session_id)
                     asyncio.get_running_loop().run_in_executor(
                         None, embed_and_save_history, _record.document_id, str(CHAT_HISTORY_STORAGE_DIR)
                     )
@@ -1676,24 +1744,24 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
                     except Exception as exc:
                         loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
 
-                loop.run_in_executor(None, _produce)
-
                 stream_result = None
-                while True:
-                    kind, data = await queue.get()
-                    if kind == "token":
-                        reply_text += data
-                        yield _sse_event({"type": "token", "text": data})
-                    elif kind == "done":
-                        stream_result = data
-                        break
-                    elif kind == "error":
-                        exc = data
-                        if isinstance(exc, (LLMDisabledError, LLMNotConfiguredError, LLMServiceError)):
-                            yield _sse_event({"type": "error", "detail": str(exc)})
-                        else:
-                            yield _sse_event({"type": "error", "detail": f"Chat inference failed: {exc}"})
-                        return
+                async with _acquire_llm_slot():
+                    loop.run_in_executor(None, _produce)
+                    while True:
+                        kind, data = await queue.get()
+                        if kind == "token":
+                            reply_text += data
+                            yield _sse_event({"type": "token", "text": data})
+                        elif kind == "done":
+                            stream_result = data
+                            break
+                        elif kind == "error":
+                            exc = data
+                            if isinstance(exc, (LLMDisabledError, LLMNotConfiguredError, LLMServiceError)):
+                                yield _sse_event({"type": "error", "detail": str(exc)})
+                            else:
+                                yield _sse_event({"type": "error", "detail": f"Chat inference failed: {exc}"})
+                            return
 
                 if stream_result is not None:
                     reply_text = stream_result.reply
@@ -1717,6 +1785,7 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
                     document_source_fingerprint=_record.source_fingerprint,
                     chunk_corpus_path=_record.chunks_path,
                     chunk_meta_path=_record.chunk_meta_path,
+                    session_id=_session_id,
                 )
                 try:
                     await run_in_threadpool(
@@ -1725,6 +1794,8 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
                         turn,
                         CHAT_HISTORY_STORAGE_DIR,
                     )
+                    if _session_id:
+                        await run_in_threadpool(_sessions.touch_session, _session_id)
                     asyncio.get_running_loop().run_in_executor(
                         None,
                         embed_and_save_history,
@@ -2004,8 +2075,96 @@ async def get_status() -> dict:
         chat_available = get_llm_service().is_chat_available()
     except Exception:
         chat_available = False
-    return {"chat_available": chat_available}
+    return {
+        "chat_available": chat_available,
+        "llm_queue_depth": getattr(app.state, "llm_queue_count", 0),
+        "llm_max_concurrent": LLM_MAX_CONCURRENT,
+        "chat_max_history_messages": CHAT_MAX_HISTORY_MESSAGES,
+    }
 
+
+# ── Session endpoints ────────────────────────────────────────────────────────
+
+class SessionCreateRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=128)
+    document_id: str = Field(..., min_length=1, max_length=128)
+    mode: Literal["learn", "exam"]
+    name: str = Field("New Session", max_length=100)
+
+
+class SessionRenameRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class SessionMetadataRequest(BaseModel):
+    metadata: dict
+
+
+@app.post("/api/sessions")
+async def create_session(body: SessionCreateRequest) -> dict:
+    """Create a new named session for a user+document+mode."""
+    return await run_in_threadpool(
+        _sessions.create_session,
+        user_id=body.user_id,
+        document_id=body.document_id,
+        mode=body.mode,
+        name=body.name,
+    )
+
+
+@app.get("/api/sessions")
+async def list_sessions(user_id: str, document_id: str, mode: str) -> list:
+    """List sessions for a user+document+mode, newest first."""
+    if mode not in {"learn", "exam"}:
+        raise HTTPException(status_code=422, detail="mode must be 'learn' or 'exam'")
+    return await run_in_threadpool(
+        _sessions.list_sessions,
+        user_id=user_id,
+        document_id=document_id,
+        mode=mode,
+    )
+
+
+@app.patch("/api/sessions/{session_id}")
+async def rename_session(session_id: str, body: SessionRenameRequest) -> dict:
+    """Rename a session."""
+    sess = await run_in_threadpool(_sessions.get_session, session_id)
+    if sess is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    await run_in_threadpool(_sessions.rename_session, session_id, body.name)
+    return {"session_id": session_id, "name": body.name.strip()[:100] or "New Session"}
+
+
+@app.patch("/api/sessions/{session_id}/metadata")
+async def patch_session_metadata(session_id: str, body: SessionMetadataRequest) -> dict:
+    """Persist a JSON metadata blob on a session (used by exam mode to save state)."""
+    sess = await run_in_threadpool(_sessions.get_session, session_id)
+    if sess is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    await run_in_threadpool(_sessions.update_session_metadata, session_id, body.metadata)
+    return {"status": "ok"}
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str) -> dict:
+    """Delete a session and all its turns."""
+    sess = await run_in_threadpool(_sessions.get_session, session_id)
+    if sess is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    await run_in_threadpool(_sessions.delete_session, session_id)
+    return {"deleted": session_id}
+
+
+@app.get("/api/sessions/{session_id}/turns")
+async def get_session_turns(session_id: str) -> list:
+    """Return lightweight turn list (user_query, assistant_answer, created_at) for a session."""
+    sess = await run_in_threadpool(_sessions.get_session, session_id)
+    if sess is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return await run_in_threadpool(_sessions.get_session_turns, session_id)
+
+
+# ── Model endpoints ──────────────────────────────────────────────────────────
 
 class ModelSelectRequest(BaseModel):
     model_filename: str
@@ -2075,13 +2234,16 @@ async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerRespon
     # ---- Paper 1: no document validation needed ----
     if payload.paper_type == "paper1":
         try:
-            result: GradingResult = await run_in_threadpool(
-                grade_answer,
-                paper_type="paper1",
-                question=payload.question,
-                student_answer=payload.student_answer,
-                passage_text=payload.passage_text or PAPER1_PASSAGE,
-            )
+            async with _acquire_llm_slot():
+                result: GradingResult = await run_in_threadpool(
+                    grade_answer,
+                    paper_type="paper1",
+                    question=payload.question,
+                    student_answer=payload.student_answer,
+                    passage_text=payload.passage_text or PAPER1_PASSAGE,
+                )
+        except HTTPException:
+            raise
         except LLMDisabledError as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         except LLMNotConfiguredError as exc:
@@ -2120,15 +2282,18 @@ async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerRespon
         ]
 
         try:
-            result = await run_in_threadpool(
-                grade_answer,
-                paper_type="paper2",
-                question=payload.question,
-                student_answer=payload.student_answer,
-                chunks_paths=[str(p) for p in chunks_paths] or None,
-                context_mode=payload.context_mode,
-                doc_titles=doc_titles,
-            )
+            async with _acquire_llm_slot():
+                result = await run_in_threadpool(
+                    grade_answer,
+                    paper_type="paper2",
+                    question=payload.question,
+                    student_answer=payload.student_answer,
+                    chunks_paths=[str(p) for p in chunks_paths] or None,
+                    context_mode=payload.context_mode,
+                    doc_titles=doc_titles,
+                )
+        except HTTPException:
+            raise
         except LLMDisabledError as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
         except LLMNotConfiguredError as exc:
@@ -2300,29 +2465,30 @@ async def exam_criterion_feedback_stream(
                 loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
 
         try:
-            loop.run_in_executor(None, _produce)
-            while True:
-                kind, data = await queue.get()
-                if kind == "token":
-                    yield _sse_event({"type": "token", "text": data})
-                elif kind == "done":
-                    inf_result = data
-                    yield _sse_event({
-                        "type": "done",
-                        "debug": {
-                            "criterion": payload.criterion,
-                            "prompt": inf_result.final_prompt,
-                            "inference_seconds": round(inf_result.inference_seconds, 3),
-                            "prompt_tokens": prompt_tokens,
-                            "remaining_budget": remaining_budget,
-                            "n_ctx": n_ctx,
-                        },
-                    })
-                    return
-                elif kind == "error":
-                    exc = data
-                    yield _sse_event({"type": "error", "detail": str(exc)})
-                    return
+            async with _acquire_llm_slot():
+                loop.run_in_executor(None, _produce)
+                while True:
+                    kind, data = await queue.get()
+                    if kind == "token":
+                        yield _sse_event({"type": "token", "text": data})
+                    elif kind == "done":
+                        inf_result = data
+                        yield _sse_event({
+                            "type": "done",
+                            "debug": {
+                                "criterion": payload.criterion,
+                                "prompt": inf_result.final_prompt,
+                                "inference_seconds": round(inf_result.inference_seconds, 3),
+                                "prompt_tokens": prompt_tokens,
+                                "remaining_budget": remaining_budget,
+                                "n_ctx": n_ctx,
+                            },
+                        })
+                        return
+                    elif kind == "error":
+                        exc = data
+                        yield _sse_event({"type": "error", "detail": str(exc)})
+                        return
         finally:
             _active_feedback_streams.discard(stream_key)
 

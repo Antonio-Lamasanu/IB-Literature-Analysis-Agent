@@ -36,6 +36,7 @@ class ChatHistoryTurn:
     document_source_fingerprint: str | None = None
     chunk_corpus_path: str | None = None
     chunk_meta_path: str | None = None
+    session_id: str | None = None
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ChatHistoryTurn" | None:
@@ -84,6 +85,11 @@ class ChatHistoryTurn:
             chunk_meta_path=(
                 str(payload["chunk_meta_path"])
                 if payload.get("chunk_meta_path") is not None
+                else None
+            ),
+            session_id=(
+                str(payload["session_id"])
+                if payload.get("session_id") is not None
                 else None
             ),
         )
@@ -148,8 +154,8 @@ def _migrate_json_files(storage_dir: str | Path) -> None:
                        (turn_id, document_id, created_at, user_query, assistant_answer,
                         retrieval_mode_used, retrieved_chunk_refs, retrieved_history_refs,
                         answer_reused_from_history, reused_from_turn_id, history_reuse_score,
-                        document_source_fingerprint, chunk_corpus_path, chunk_meta_path)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        document_source_fingerprint, chunk_corpus_path, chunk_meta_path, session_id)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         turn.turn_id, turn.document_id, turn.created_at,
                         turn.user_query, turn.assistant_answer, turn.retrieval_mode_used,
@@ -157,7 +163,7 @@ def _migrate_json_files(storage_dir: str | Path) -> None:
                         json.dumps(turn.retrieved_history_refs, ensure_ascii=False),
                         int(turn.answer_reused_from_history), turn.reused_from_turn_id,
                         turn.history_reuse_score, turn.document_source_fingerprint,
-                        turn.chunk_corpus_path, turn.chunk_meta_path,
+                        turn.chunk_corpus_path, turn.chunk_meta_path, turn.session_id,
                     ),
                 )
                 migrated += 1
@@ -180,32 +186,45 @@ def _ensure_migrated(storage_dir: str | Path) -> None:
         _migrate_json_files(storage_dir)
 
 
-def load_chat_history(document_id: str, storage_dir: str | Path) -> list[ChatHistoryTurn]:
+def load_chat_history(
+    document_id: str,
+    storage_dir: str | Path,
+    *,
+    session_id: str | None = None,
+) -> list[ChatHistoryTurn]:
     _ensure_migrated(storage_dir)
     db_path = get_db_path()
     with get_connection(db_path) as conn:
-        rows = conn.execute(
-            "SELECT * FROM chat_turns WHERE document_id=? ORDER BY created_at ASC",
-            (document_id,),
-        ).fetchall()
+        if session_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM chat_turns WHERE document_id=? AND session_id=? ORDER BY created_at ASC",
+                (document_id, session_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM chat_turns WHERE document_id=? ORDER BY created_at ASC",
+                (document_id,),
+            ).fetchall()
     turns: list[ChatHistoryTurn] = []
     for row in rows:
         try:
+            row_dict = dict(row)
             turn = ChatHistoryTurn(
-                turn_id=row["turn_id"],
-                document_id=row["document_id"],
-                created_at=row["created_at"],
-                user_query=row["user_query"],
-                assistant_answer=row["assistant_answer"],
-                retrieval_mode_used=row["retrieval_mode_used"],
-                retrieved_chunk_refs=json.loads(row["retrieved_chunk_refs"] or "[]"),
-                retrieved_history_refs=json.loads(row["retrieved_history_refs"] or "[]"),
-                answer_reused_from_history=bool(row["answer_reused_from_history"]),
-                reused_from_turn_id=row["reused_from_turn_id"],
-                history_reuse_score=row["history_reuse_score"],
-                document_source_fingerprint=row["document_source_fingerprint"],
-                chunk_corpus_path=row["chunk_corpus_path"],
-                chunk_meta_path=row["chunk_meta_path"],
+                turn_id=row_dict["turn_id"],
+                document_id=row_dict["document_id"],
+                created_at=row_dict["created_at"],
+                user_query=row_dict["user_query"],
+                assistant_answer=row_dict["assistant_answer"],
+                retrieval_mode_used=row_dict["retrieval_mode_used"],
+                retrieved_chunk_refs=json.loads(row_dict["retrieved_chunk_refs"] or "[]"),
+                retrieved_history_refs=json.loads(row_dict["retrieved_history_refs"] or "[]"),
+                answer_reused_from_history=bool(row_dict["answer_reused_from_history"]),
+                reused_from_turn_id=row_dict["reused_from_turn_id"],
+                history_reuse_score=row_dict["history_reuse_score"],
+                document_source_fingerprint=row_dict["document_source_fingerprint"],
+                chunk_corpus_path=row_dict["chunk_corpus_path"],
+                chunk_meta_path=row_dict["chunk_meta_path"],
+                session_id=row_dict.get("session_id"),
             )
             turns.append(turn)
         except Exception as exc:
@@ -227,6 +246,7 @@ def create_chat_history_turn(
     document_source_fingerprint: str | None = None,
     chunk_corpus_path: str | None = None,
     chunk_meta_path: str | None = None,
+    session_id: str | None = None,
 ) -> ChatHistoryTurn:
     return ChatHistoryTurn(
         turn_id=str(uuid.uuid4()),
@@ -245,6 +265,7 @@ def create_chat_history_turn(
         document_source_fingerprint=document_source_fingerprint,
         chunk_corpus_path=chunk_corpus_path,
         chunk_meta_path=chunk_meta_path,
+        session_id=session_id,
     )
 
 
@@ -278,8 +299,8 @@ def _insert_turn(conn: object, turn: ChatHistoryTurn) -> None:
            (turn_id, document_id, created_at, user_query, assistant_answer,
             retrieval_mode_used, retrieved_chunk_refs, retrieved_history_refs,
             answer_reused_from_history, reused_from_turn_id, history_reuse_score,
-            document_source_fingerprint, chunk_corpus_path, chunk_meta_path)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            document_source_fingerprint, chunk_corpus_path, chunk_meta_path, session_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             turn.turn_id, turn.document_id, turn.created_at,
             turn.user_query, turn.assistant_answer, turn.retrieval_mode_used,
@@ -287,7 +308,7 @@ def _insert_turn(conn: object, turn: ChatHistoryTurn) -> None:
             json.dumps(turn.retrieved_history_refs, ensure_ascii=False),
             int(turn.answer_reused_from_history), turn.reused_from_turn_id,
             turn.history_reuse_score, turn.document_source_fingerprint,
-            turn.chunk_corpus_path, turn.chunk_meta_path,
+            turn.chunk_corpus_path, turn.chunk_meta_path, turn.session_id,
         ),
     )
 
