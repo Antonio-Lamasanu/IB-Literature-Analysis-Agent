@@ -2008,6 +2008,7 @@ class SubmitAnswerRequest(BaseModel):
     document_ids: list[str] = Field(default_factory=list)
     context_mode: Literal["chunks", "titles_only"] = "chunks"
     passage_text: str | None = Field(None, max_length=10_000)
+    model: str | None = None
 
 
 class ExamCriterionResult(BaseModel):
@@ -2023,6 +2024,11 @@ class ExamDebugInfo(BaseModel):
     raw_output: str
     inference_seconds: float
     prompt_tokens: int
+    retrieval_modes: list[str] = []
+    routing_reason: str | None = None
+    top_semantic_score: float | None = None
+    excerpts_per_doc: list[list[dict]] = []
+    context_mode_effective: str | None = None
 
 
 class SubmitAnswerResponse(BaseModel):
@@ -2046,6 +2052,7 @@ class FeedbackStreamRequest(BaseModel):
     passage_text: str | None = Field(None, max_length=10_000)
     document_ids: list[str] = Field(default_factory=list)
     context_mode: Literal["chunks", "titles_only"] = "chunks"
+    model: str | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -2231,6 +2238,16 @@ async def exam_get_paper2_questions() -> Paper2QuestionsResponse:
 
 @app.post("/api/exam/submit-answer", response_model=SubmitAnswerResponse)
 async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerResponse:
+    if payload.model:
+        from llm_service import _DEFAULT_MODELS_DIR as _mdl_dir
+        _svc = get_llm_service()
+        if isinstance(_svc, LLMService):
+            _fn = payload.model.strip()
+            if _fn and "\\" not in _fn and "/" not in _fn and ".." not in _fn:
+                _target = _mdl_dir / _fn
+                if _target.is_file():
+                    await run_in_threadpool(_svc.reload, str(_target))
+
     # ---- Paper 1: no document validation needed ----
     if payload.paper_type == "paper1":
         try:
@@ -2366,6 +2383,11 @@ async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerRespon
             raw_output=result.raw_output,
             inference_seconds=result.inference_seconds,
             prompt_tokens=get_llm_service().count_tokens(result.prompt),
+            retrieval_modes=result.retrieval_modes,
+            routing_reason=result.routing_reason or None,
+            top_semantic_score=result.top_semantic_score,
+            excerpts_per_doc=result.excerpts_per_doc,
+            context_mode_effective=result.context_mode_effective,
         ),
     )
 
@@ -2385,7 +2407,17 @@ async def exam_criterion_feedback_stream(
     Emits token / done / error events using the same pattern as /api/chat/stream.
     Returns HTTP 409 if a stream for the same student answer is already active.
     """
-    stream_key = payload.student_answer[:32]
+    if payload.model:
+        from llm_service import _DEFAULT_MODELS_DIR as _mdl_dir
+        _svc = get_llm_service()
+        if isinstance(_svc, LLMService):
+            _fn = payload.model.strip()
+            if _fn and "\\" not in _fn and "/" not in _fn and ".." not in _fn:
+                _target = _mdl_dir / _fn
+                if _target.is_file():
+                    await run_in_threadpool(_svc.reload, str(_target))
+
+    stream_key = f"{payload.student_answer[:32]}_{payload.criterion}"
     if stream_key in _active_feedback_streams:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

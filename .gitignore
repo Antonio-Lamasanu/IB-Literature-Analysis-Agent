@@ -50,7 +50,7 @@ frontend/.vite/
 .env.production
 
 # ── Project-specific outputs ──────────────────────────────────
-# All runtime-generated files: extracted text, chunks, chat/exam history, benchmarks
+# All runtime-generated files: extracted text, chunks, chat/exam history, benchmarks, SQLite db
 backend/outputs/
 
 # Uploaded PDFs (temp storage)
@@ -81,7 +81,6 @@ desktop.ini
 # ── Claude Code ───────────────────────────────────────────────
 .claude/settings.local.json
 CLAUDE.md
-CONTEXT.md
 .claudeignore
 
 # ── Corpus lookup API cache ───────────────────────────────────

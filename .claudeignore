@@ -29,4 +29,3 @@ backend/uploads/
 
 # Claude Code context docs (local-only, kept out of git)
 CLAUDE.md
-CONTEXT.md

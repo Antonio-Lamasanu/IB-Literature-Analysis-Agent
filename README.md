@@ -16,6 +16,7 @@ Local-first literary analysis and IB English A exam preparation tool. Upload a P
 | NLP / chunking | spaCy 3.7 |
 | Embeddings | sentence-transformers |
 | Retrieval | BM25 + cosine similarity |
+| Storage | SQLite (docs/sessions) + flat JSONL/NumPy (chunks/history) |
 
 ---
 
@@ -24,8 +25,8 @@ Local-first literary analysis and IB English A exam preparation tool. Upload a P
 ```
 demo/
 ├── backend/
-│   ├── main.py               # FastAPI app, all REST endpoints
-│   ├── llm_service.py        # llama-cpp-python wrapper (local + remote)
+│   ├── main.py               # FastAPI app, all REST endpoints (2531 LOC)
+│   ├── llm_service.py        # llama-cpp-python wrapper
 │   ├── chunking.py           # Semantic PDF chunking (spaCy-based)
 │   ├── retrieval.py          # BM25 + embedding retrieval
 │   ├── embeddings.py         # sentence-transformers wrapper
@@ -35,11 +36,18 @@ demo/
 │   ├── chat_history.py       # Conversation persistence
 │   ├── exam_history.py       # Exam attempt tracking
 │   ├── document_registry.py  # Document metadata registry
+│   ├── sessions.py           # Named session CRUD
+│   ├── database.py           # SQLite setup + connection factory
+│   ├── quality.py            # Chunk quality / duplicate detection
+│   ├── system_info.py        # Hardware detection + model-tier recommendation
+│   ├── prompt_router.py      # Auto base_knowledge vs RAG selection
+│   ├── corpus_lookup.py      # Known-works API lookup + caching
 │   ├── benchmark.py          # Multi-model benchmarking harness
 │   ├── benchmark_config.json # Benchmark run configuration
 │   ├── requirements.txt
 │   ├── .env.example
 │   ├── outputs/              # Runtime-generated (gitignored)
+│   │   ├── app.db            # SQLite database
 │   │   ├── documents/        # Preprocessed document files
 │   │   │   ├── *.txt         # Extracted full text
 │   │   │   ├── *.chunks.jsonl
@@ -103,6 +111,7 @@ Key variables in `backend/.env`:
 | `TESSERACT_CMD` | `tesseract` | Path to Tesseract binary |
 | `NATIVE_CHAR_THRESHOLD` | `200` | Min chars to skip OCR |
 | `MAX_UPLOAD_MB` | `500` | Max PDF upload size |
+| `DB_PATH` | `outputs/app.db` | SQLite database file path |
 
 See `.env.example` for the full list.
 
@@ -115,6 +124,7 @@ See `.env.example` for the full list.
 1. Upload a PDF — text is extracted (native or OCR) and chunked
 2. Chunks are embedded with sentence-transformers
 3. Ask questions — relevant chunks are retrieved (BM25 + semantic similarity) and passed to the local LLM
+4. Sessions are named and persist across page reloads
 
 Three prompt formats are available:
 - `base_knowledge` — LLM answers from model knowledge only (no context)
@@ -156,11 +166,9 @@ Results are written to `backend/outputs/benchmarks/`.
 
 ## Data Storage
 
-All data is stored as flat files — no database required.
-
-| File | Contents |
+| Storage | Contents |
 |---|---|
-| `outputs/documents.index.json` | Document registry (metadata for all uploads) |
+| `outputs/app.db` | SQLite — documents table + sessions/turns tables |
 | `outputs/documents/{id}.txt` | Extracted full text |
 | `outputs/documents/{stem}_{id}.chunks.jsonl` | Text chunks (one JSON object per line) |
 | `outputs/documents/{stem}_{id}.chunks.meta.json` | Chunk metadata (schema version, counts) |

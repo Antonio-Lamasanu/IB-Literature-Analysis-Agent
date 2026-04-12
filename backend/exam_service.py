@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Generator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from llm_service import (
@@ -13,6 +13,7 @@ from llm_service import (
     LLMServiceError,
     get_llm_service,
 )
+from prompt_router import route_prompt_mode
 from retrieval import format_excerpt_context, retrieve_relevant_excerpts
 
 
@@ -104,10 +105,15 @@ class GradingResult:
     total_score: int
     max_score: int    # 20 for paper1, 40 for paper2
     paper_type: str
-    context_mode: str  # "chunks" | "titles_only"
+    context_mode: str           # user's requested mode
+    context_mode_effective: str # actual mode used (may differ if router overrides)
     raw_output: str
     inference_seconds: float
     prompt: str
+    retrieval_modes: list[str] = field(default_factory=list)
+    routing_reason: str = ""
+    top_semantic_score: float | None = None
+    excerpts_per_doc: list[list[dict]] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -119,18 +125,41 @@ def _validate_paper_type(paper_type: str) -> None:
         raise ValueError(f"Invalid paper_type {paper_type!r}. Must be 'paper1' or 'paper2'.")
 
 
-def retrieve_multi_doc_context(chunks_paths: list[str | Path], paper_type: str) -> str:
-    """Retrieve and format BM25 excerpts from one or two documents.
+@dataclass
+class MultiDocRetrievalResult:
+    context_text: str
+    excerpts_per_doc: list[list[dict]]  # one list per work; each item is excerpt.to_dict()
+    top_semantic_score: float
+    retrieval_modes: list[str]
 
-    Each document's excerpts are labelled with a '--- Work N ---' header so the
-    grading prompt clearly distinguishes the two works.
+
+def retrieve_multi_doc_context(
+    chunks_paths: list[str | Path],
+    paper_type: str,
+    student_answer: str = "",
+    question: str = "",
+) -> MultiDocRetrievalResult:
+    """Retrieve and format excerpts from one or two documents.
+
+    Uses the exam question + student answer as the retrieval query so that
+    the returned passages are targeted to what the student actually wrote.
+    Falls back to the static topic-keyword query when both are empty (e.g.
+    benchmark runs that do not supply a live answer).
+
+    Each document's excerpts are labelled with a '--- Work N ---' header so
+    the grading prompt clearly distinguishes the two works.
     """
     _validate_paper_type(paper_type)
-    query = GRADING_QUERY[paper_type]
+    answer_snippet = (question + " " + student_answer).strip()
+    query = answer_snippet[:2000] if answer_snippet else GRADING_QUERY[paper_type]
+
     parts: list[str] = []
+    all_excerpts_per_doc: list[list[dict]] = []
+    top_semantic: float = 0.0
+    modes: list[str] = []
 
     for idx, chunks_path in enumerate(chunks_paths, start=1):
-        excerpts, _mode = retrieve_relevant_excerpts(
+        excerpts, raw_top, retrieval_mode = retrieve_relevant_excerpts(
             "",  # document_text unused when persisted_chunks_path is given
             query,
             persisted_chunks_path=Path(chunks_path),
@@ -138,10 +167,19 @@ def retrieve_multi_doc_context(chunks_paths: list[str | Path], paper_type: str) 
             context_token_budget=_grading_token_budget,
             retrieve_candidates=_GRADING_RETRIEVE_CANDIDATES,
         )
+        if raw_top:
+            top_semantic = max(top_semantic, max(e.semantic_score for e in raw_top))
         label = f"--- Work {idx} ---"
         parts.append(f"{label}\n{format_excerpt_context(excerpts)}")
+        all_excerpts_per_doc.append([e.to_debug_dict() for e in excerpts])
+        modes.append(retrieval_mode)
 
-    return "\n\n".join(parts)
+    return MultiDocRetrievalResult(
+        context_text="\n\n".join(parts),
+        excerpts_per_doc=all_excerpts_per_doc,
+        top_semantic_score=top_semantic,
+        retrieval_modes=modes,
+    )
 
 
 _FEEDBACK_COACHING: dict[str, dict[str, str]] = {
@@ -245,8 +283,11 @@ def _parse_grading_output(
     raw: str,
     paper_type: str,
     context_mode: str,
+    context_mode_effective: str,
     inference_seconds: float,
     prompt: str,
+    retrieval_result: MultiDocRetrievalResult | None = None,
+    routing_reason: str = "",
 ) -> GradingResult:
     criteria_defs = CRITERIA_BY_PAPER[paper_type]
     criterion_map: dict[str, tuple[str, int]] = {
@@ -310,9 +351,14 @@ def _parse_grading_output(
         max_score=MAX_SCORE_BY_PAPER[paper_type],
         paper_type=paper_type,
         context_mode=context_mode,
+        context_mode_effective=context_mode_effective,
         raw_output=raw,
         inference_seconds=inference_seconds,
         prompt=prompt,
+        retrieval_modes=retrieval_result.retrieval_modes if retrieval_result else [],
+        routing_reason=routing_reason,
+        top_semantic_score=retrieval_result.top_semantic_score if retrieval_result else None,
+        excerpts_per_doc=retrieval_result.excerpts_per_doc if retrieval_result else [],
     )
 
 
@@ -333,10 +379,17 @@ def grade_answer(
     """Grade a student answer against IB criteria for the given paper type.
 
     Paper 1: pass ``passage_text`` — the hardcoded unseen passage is used directly.
-    Paper 2, chunks mode: pass ``chunks_paths`` — BM25 retrieval from each work.
+    Paper 2, chunks mode: pass ``chunks_paths`` — retrieval from each work using the
+      student answer + question as the query. The System 2 router then decides whether
+      the retrieved excerpts are relevant enough to include; if not, falls back to
+      titles_only (base knowledge).
     Paper 2, titles_only mode: pass ``doc_titles`` — only work titles/authors as context.
     """
     _validate_paper_type(paper_type)
+
+    retrieval_result: MultiDocRetrievalResult | None = None
+    routing_reason: str = ""
+    context_mode_effective: str = context_mode
 
     if paper_type == "paper1":
         prompt = _build_paper1_grading_prompt(
@@ -348,15 +401,44 @@ def grade_answer(
         if context_mode == "titles_only":
             lines = [f"Work {i + 1}: {t}" for i, t in enumerate(doc_titles or [])]
             context_text = "\n".join(lines) if lines else "(no work information provided)"
+            routing_reason = "user_selected_titles_only"
         else:
-            context_text = retrieve_multi_doc_context(chunks_paths or [], paper_type)
-        prompt = _build_paper2_grading_prompt(question, student_answer, context_mode, context_text)
+            retrieval_result = retrieve_multi_doc_context(
+                chunks_paths or [],
+                paper_type,
+                student_answer=student_answer,
+                question=question,
+            )
+            chosen_mode, routing_reason = route_prompt_mode(
+                known_work_confidence=None,
+                top_semantic_score=retrieval_result.top_semantic_score,
+                has_conversation_history=False,
+            )
+            if chosen_mode == "base_knowledge":
+                # Router determined retrieval signal is too weak; fall back to titles
+                lines = [f"Work {i + 1}: {t}" for i, t in enumerate(doc_titles or [])]
+                context_text = "\n".join(lines) if lines else "(no work information provided)"
+                context_mode_effective = "titles_only"
+            else:
+                context_text = retrieval_result.context_text
+                context_mode_effective = "chunks"
+
+        prompt = _build_paper2_grading_prompt(question, student_answer, context_mode_effective, context_text)
 
     t0 = time.perf_counter()
     result = get_llm_service().generate_raw_reply(prompt)
     inference_seconds = time.perf_counter() - t0
 
-    return _parse_grading_output(result.reply, paper_type, context_mode, inference_seconds, prompt)
+    return _parse_grading_output(
+        result.reply,
+        paper_type,
+        context_mode,
+        context_mode_effective,
+        inference_seconds,
+        prompt,
+        retrieval_result=retrieval_result,
+        routing_reason=routing_reason,
+    )
 
 
 # --------------------------------------------------------------------------- #

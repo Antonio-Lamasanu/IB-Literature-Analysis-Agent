@@ -564,6 +564,12 @@ body {
   padding: 8px 12px; font-size: 0.84rem;
 }
 [data-theme="dark"] .msg-warning { background: #422006; color: #fde68a; border-color: #78350f; }
+.msg-info {
+  background: var(--accent-soft); color: var(--accent);
+  border: 1px solid var(--accent-border); border-radius: var(--radius-sm);
+  padding: 10px 14px; font-size: 0.875rem;
+}
+[data-theme="dark"] .msg-info { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-border); }
 
 @media (max-width: 760px) {
   .learn-with-sessions { grid-template-columns: 1fr; }
@@ -673,11 +679,18 @@ export default function App() {
   const [deleteDocId, setDeleteDocId] = useState(null);
   const [deleteError, setDeleteError] = useState("");
 
+  // ── Exam grading timer & abort ────────────────────────────────────────────
+  const [examGradingElapsed, setExamGradingElapsed] = useState(0);
+  const examGradingIntervalRef = useRef(null);
+  const examGradingAbortRef = useRef(null);
+  const examFeedbackAbortRef = useRef(null);
+
   // ── Refs ──────────────────────────────────────────────────────────────────
   const startedAtRef = useRef(null);
   const intervalRef = useRef(null);
   const downloadUrlRef = useRef(null);
   const sessionCreatingRef = useRef(false);
+  const sessionAbortRefs = useRef(new Map());
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const isBusy = uploadStatus === "processing" || uploadStatus === "chunking";
@@ -741,6 +754,9 @@ export default function App() {
 
   // ── Reset helpers ──────────────────────────────────────────────────────────
   const resetExam = () => {
+    if (examGradingIntervalRef.current) { clearInterval(examGradingIntervalRef.current); examGradingIntervalRef.current = null; }
+    examGradingAbortRef.current?.abort();
+    examFeedbackAbortRef.current?.abort();
     setExamStep("setup");
     setExamPassage("");
     setExamQuestionText("");
@@ -754,6 +770,7 @@ export default function App() {
     setExamGrading(null);
     setExamGradingStatus("idle");
     setExamGradingError("");
+    setExamGradingElapsed(0);
     setExamDebug(null);
     setExamFeedbacks({});
     setExamFeedbackStatus("idle");
@@ -1133,33 +1150,19 @@ export default function App() {
   };
 
   // ── Chat ───────────────────────────────────────────────────────────────────
-  const onSendChat = async (e) => {
-    e.preventDefault();
-    if (!hasChatDocument || !chatAvailable) return;
-    const userText = chatInput.trim();
-    if (!userText) return;
-
-    // Capture the key at send-time so closures inside the async function always
-    // update the correct session even if the user navigates elsewhere.
-    const sendKey = activeLearnSessionId ?? "__nosession__";
-    const sendSessionId = activeLearnSessionId;
-
-    const prevMsgs = sessionChats.get(sendKey) ?? [];
-    const nextMessages = [...prevMsgs, { role: "user", content: userText }];
-    setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, nextMessages); return m; });
-    setChatInput("");
-    setSessionErrors((prev) => { const m = new Map(prev); m.delete(sendKey); return m; });
-    setSessionDebugs((prev) => { const m = new Map(prev); m.delete(sendKey); return m; });
-    setSessionStatuses((prev) => { const m = new Map(prev); m.set(sendKey, "sending"); return m; });
-    setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, [...nextMessages, { role: "assistant", content: "", streaming: true }]); return m; });
-
+  // Core streaming function. `userMessages` is the full message list ending with the user turn.
+  // The caller is responsible for setting up the placeholder assistant message before calling.
+  const _doStreamChat = async (sendKey, sendSessionId, userMessages) => {
+    const controller = new AbortController();
+    sessionAbortRefs.current.set(sendKey, controller);
     try {
       const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           document_id: activeChatDocId,
-          messages: nextMessages,
+          messages: userMessages,
           prompt_format: promptFormat,
           session_id: sendSessionId,
           user_id: userId,
@@ -1167,7 +1170,7 @@ export default function App() {
         }),
       });
       if (!response.ok) {
-        setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, nextMessages); return m; });
+        setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, userMessages); return m; });
         throw new Error(await parseErrorDetail(response, "Failed to get chat response."));
       }
 
@@ -1207,16 +1210,69 @@ export default function App() {
               setLearnSessions((prev) => prev.map((s) => s.session_id === sendSessionId ? { ...s, turn_count: (s.turn_count || 0) + 1 } : s));
             }
           } else if (ev.type === "error") {
-            setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, nextMessages); return m; });
+            setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, userMessages); return m; });
             throw new Error(ev.detail || "Chat stream error.");
           }
         }
       }
       setSessionStatuses((prev) => { const m = new Map(prev); m.set(sendKey, "idle"); return m; });
     } catch (err) {
-      setSessionStatuses((prev) => { const m = new Map(prev); m.set(sendKey, "error"); return m; });
-      setSessionErrors((prev) => { const m = new Map(prev); m.set(sendKey, err?.message || "Unexpected error while chatting."); return m; });
+      if (err?.name === "AbortError") {
+        // Mark the partial assistant message as stopped instead of removing it
+        setSessionChats((prev) => {
+          const m = new Map(prev);
+          const msgs = [...(m.get(sendKey) ?? [])];
+          if (msgs.length > 0 && msgs[msgs.length - 1].role === "assistant") {
+            msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], streaming: false, stopped: true };
+          }
+          m.set(sendKey, msgs);
+          return m;
+        });
+        setSessionStatuses((prev) => { const m = new Map(prev); m.set(sendKey, "idle"); return m; });
+      } else {
+        setSessionStatuses((prev) => { const m = new Map(prev); m.set(sendKey, "error"); return m; });
+        setSessionErrors((prev) => { const m = new Map(prev); m.set(sendKey, err?.message || "Unexpected error while chatting."); return m; });
+      }
+    } finally {
+      sessionAbortRefs.current.delete(sendKey);
     }
+  };
+
+  const onSendChat = async (e) => {
+    e.preventDefault();
+    if (!hasChatDocument || !chatAvailable) return;
+    const userText = chatInput.trim();
+    if (!userText) return;
+
+    // Capture the key at send-time so closures inside the async function always
+    // update the correct session even if the user navigates elsewhere.
+    const sendKey = activeLearnSessionId ?? "__nosession__";
+    const sendSessionId = activeLearnSessionId;
+
+    const prevMsgs = sessionChats.get(sendKey) ?? [];
+    const nextMessages = [...prevMsgs, { role: "user", content: userText }];
+    setSessionChats((prev) => { const m = new Map(prev); m.set(sendKey, [...nextMessages, { role: "assistant", content: "", streaming: true }]); return m; });
+    setChatInput("");
+    setSessionErrors((prev) => { const m = new Map(prev); m.delete(sendKey); return m; });
+    setSessionDebugs((prev) => { const m = new Map(prev); m.delete(sendKey); return m; });
+    setSessionStatuses((prev) => { const m = new Map(prev); m.set(sendKey, "sending"); return m; });
+
+    await _doStreamChat(sendKey, sendSessionId, nextMessages);
+  };
+
+  const regenerateChat = async (key) => {
+    const sessionId = key === "__nosession__" ? null : key;
+    const msgs = sessionChats.get(key) ?? [];
+    const trimmed = [...msgs];
+    // Remove last assistant message (the stopped one)
+    if (trimmed.length > 0 && trimmed[trimmed.length - 1].role === "assistant") trimmed.pop();
+    const lastUser = trimmed[trimmed.length - 1];
+    if (!lastUser || lastUser.role !== "user") return;
+    setSessionChats((prev) => { const m = new Map(prev); m.set(key, [...trimmed, { role: "assistant", content: "", streaming: true }]); return m; });
+    setSessionErrors((prev) => { const m = new Map(prev); m.delete(key); return m; });
+    setSessionDebugs((prev) => { const m = new Map(prev); m.delete(key); return m; });
+    setSessionStatuses((prev) => { const m = new Map(prev); m.set(key, "sending"); return m; });
+    await _doStreamChat(key, sessionId, trimmed);
   };
 
   // ── Exam ───────────────────────────────────────────────────────────────────
@@ -1268,10 +1324,88 @@ export default function App() {
     setTimeout(() => saveExamState(activeExamSessionId), 0);
   };
 
-  const startFeedbackStreaming = async (gradingData, studentAnswer, gradingPromptTokens) => {
+  // Generate detailed coaching feedback for a single criterion.
+  // `gradingCriteria` is the array of criterion objects from the grading result.
+  // `studentAnswer`, `questionText`, `paperType`, `passage`, `selectedDocIds`, `contextMode`, `modelKey`
+  // are captured from state at call time.
+  const generateCriterionFeedback = async (criterion, gradingCriteria, studentAnswer, questionText, paperType, passage, selectedDocIds, contextMode, modelKey) => {
+    const c = gradingCriteria.find((x) => x.criterion === criterion);
+    if (!c) return;
+
+    setExamFeedbacks((prev) => ({ ...prev, [criterion]: { ...(prev[criterion] || { text: "", error: "", isOpen: false }), status: "streaming", isOpen: true } }));
+    setExamFeedbackStatus("streaming");
+    setExamTokenDebug((prev) => prev ? { ...prev, calls: prev.calls.map((call) => call.criterion === criterion ? { ...call, status: "streaming" } : call) } : prev);
+
+    const controller = new AbortController();
+    examFeedbackAbortRef.current = controller;
+
+    const body = {
+      paper_type: paperType, criterion: c.criterion, score: c.score, max_score: c.max_score,
+      student_answer: studentAnswer, question: questionText,
+      passage_text: paperType === "paper1" ? passage : null,
+      document_ids: paperType === "paper2" ? selectedDocIds : [],
+      context_mode: paperType === "paper2" ? contextMode : "chunks",
+      model: modelKey || null,
+    };
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/exam/criterion-feedback/stream`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        signal: controller.signal, body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error(await parseErrorDetail(response, "Feedback request failed."));
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let doneDebug = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let ev; try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+          if (ev.type === "token") setExamFeedbacks((prev) => ({ ...prev, [criterion]: { ...prev[criterion], text: (prev[criterion]?.text || "") + ev.text } }));
+          else if (ev.type === "done") doneDebug = ev.debug;
+          else if (ev.type === "error") throw new Error(ev.detail || "Feedback stream error.");
+        }
+      }
+      setExamFeedbacks((prev) => ({ ...prev, [criterion]: { ...prev[criterion], status: "done" } }));
+      setExamTokenDebug((prev) => {
+        if (!prev || !doneDebug) return prev;
+        return {
+          ...prev, nCtx: doneDebug.n_ctx ?? prev.nCtx,
+          totalTokensEstimated: prev.totalTokensEstimated + (doneDebug.prompt_tokens || 0),
+          calls: prev.calls.map((call) => call.criterion === criterion ? { ...call, promptTokens: doneDebug.prompt_tokens, remainingBudget: doneDebug.remaining_budget, inferenceSeconds: doneDebug.inference_seconds, status: "done" } : call),
+        };
+      });
+      return true; // not aborted
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        setExamFeedbacks((prev) => ({ ...prev, [criterion]: { ...prev[criterion], status: "canceled" } }));
+        setExamTokenDebug((prev) => prev ? { ...prev, calls: prev.calls.map((call) => call.criterion === criterion ? { ...call, status: "canceled" } : call) } : prev);
+        return false; // aborted
+      }
+      setExamFeedbacks((prev) => ({ ...prev, [criterion]: { ...prev[criterion], status: "error", error: err.message } }));
+      setExamTokenDebug((prev) => prev ? { ...prev, calls: prev.calls.map((call) => call.criterion === criterion ? { ...call, status: "error" } : call) } : prev);
+      return true; // error but not aborted, continue to next
+    }
+  };
+
+  // Update overall feedback status based on per-criterion statuses.
+  const _updateExamFeedbackStatus = (feedbacks) => {
+    const statuses = Object.values(feedbacks).map((f) => f.status);
+    if (statuses.every((s) => s === "done" || s === "canceled" || s === "error")) {
+      setExamFeedbackStatus("done");
+    }
+  };
+
+  const startFeedbackStreaming = async (gradingData, studentAnswer, gradingPromptTokens, modelKey) => {
     const criteria = gradingData.criteria || [];
     const initial = {};
-    for (const c of criteria) initial[c.criterion] = { status: "idle", text: "", error: "", isOpen: false };
+    for (const c of criteria) initial[c.criterion] = { status: "pending", text: "", error: "", isOpen: false };
     setExamFeedbacks(initial);
     setExamFeedbackStatus("streaming");
     setExamTokenDebug({
@@ -1281,54 +1415,30 @@ export default function App() {
       totalTokensEstimated: gradingPromptTokens || 0,
     });
 
+    // Capture current exam state for the feedback calls
+    const capturedAnswer = studentAnswer;
+    const capturedQuestion = examQuestionText;
+    const capturedPaperType = examPaperType;
+    const capturedPassage = examPassage;
+    const capturedDocIds = examSelectedDocIds;
+    const capturedContextMode = examContextMode;
+
     for (const c of criteria) {
-      setExamFeedbacks((prev) => ({ ...prev, [c.criterion]: { ...prev[c.criterion], status: "streaming", isOpen: true } }));
-      setExamTokenDebug((prev) => prev ? { ...prev, calls: prev.calls.map((call) => call.criterion === c.criterion ? { ...call, status: "streaming" } : call) } : prev);
-      const body = {
-        paper_type: examPaperType, criterion: c.criterion, score: c.score, max_score: c.max_score,
-        student_answer: studentAnswer, question: examQuestionText,
-        passage_text: examPaperType === "paper1" ? examPassage : null,
-        document_ids: examPaperType === "paper2" ? examSelectedDocIds : [],
-        context_mode: examPaperType === "paper2" ? examContextMode : "chunks",
-      };
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/exam/criterion-feedback/stream`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        if (!response.ok) throw new Error(await parseErrorDetail(response, "Feedback request failed."));
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let doneDebug = null;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop();
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            let ev; try { ev = JSON.parse(line.slice(6)); } catch { continue; }
-            if (ev.type === "token") setExamFeedbacks((prev) => ({ ...prev, [c.criterion]: { ...prev[c.criterion], text: (prev[c.criterion]?.text || "") + ev.text } }));
-            else if (ev.type === "done") doneDebug = ev.debug;
-            else if (ev.type === "error") throw new Error(ev.detail || "Feedback stream error.");
-          }
-        }
-        setExamFeedbacks((prev) => ({ ...prev, [c.criterion]: { ...prev[c.criterion], status: "done" } }));
-        if (doneDebug) {
-          setExamTokenDebug((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev, nCtx: doneDebug.n_ctx ?? prev.nCtx,
-              totalTokensEstimated: prev.totalTokensEstimated + (doneDebug.prompt_tokens || 0),
-              calls: prev.calls.map((call) => call.criterion === c.criterion ? { ...call, promptTokens: doneDebug.prompt_tokens, remainingBudget: doneDebug.remaining_budget, inferenceSeconds: doneDebug.inference_seconds, status: "done" } : call),
-            };
-          });
-        }
-      } catch (err) {
-        setExamFeedbacks((prev) => ({ ...prev, [c.criterion]: { ...prev[c.criterion], status: "error", error: err.message } }));
-        setExamTokenDebug((prev) => prev ? { ...prev, calls: prev.calls.map((call) => call.criterion === c.criterion ? { ...call, status: "error" } : call) } : prev);
-      }
+      const continued = await generateCriterionFeedback(
+        c.criterion, criteria, capturedAnswer, capturedQuestion,
+        capturedPaperType, capturedPassage, capturedDocIds, capturedContextMode, modelKey,
+      );
+      if (!continued) break; // user aborted, stop auto-advancing
     }
-    setExamFeedbackStatus("done");
+
+    // Set final status based on what happened
+    setExamFeedbacks((prev) => {
+      const statuses = Object.values(prev).map((f) => f.status);
+      if (statuses.every((s) => s === "done" || s === "canceled" || s === "error")) {
+        setExamFeedbackStatus("done");
+      }
+      return prev;
+    });
   };
 
   const onSubmitExamAnswer = async (e) => {
@@ -1339,24 +1449,45 @@ export default function App() {
     setExamFeedbacks({});
     setExamFeedbackStatus("idle");
     setExamTokenDebug(null);
+    setExamGradingElapsed(0);
+    if (examGradingIntervalRef.current) clearInterval(examGradingIntervalRef.current);
+    examGradingIntervalRef.current = setInterval(() => setExamGradingElapsed((s) => s + 1), 1000);
+    const controller = new AbortController();
+    examGradingAbortRef.current = controller;
+
     try {
       const studentAnswer = examAnswer.trim();
+      const examModelKey = sessionModels.get(activeExamSessionId || "__exam__") || null;
       const body = {
         paper_type: examPaperType, question: examQuestionText, student_answer: studentAnswer,
         document_ids: examPaperType === "paper2" ? examSelectedDocIds : [],
         context_mode: examPaperType === "paper2" ? examContextMode : "chunks",
         passage_text: examPaperType === "paper1" ? examPassage : null,
+        model: examModelKey,
       };
-      const response = await fetch(`${API_BASE_URL}/api/exam/submit-answer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const response = await fetch(`${API_BASE_URL}/api/exam/submit-answer`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        signal: controller.signal, body: JSON.stringify(body),
+      });
       if (!response.ok) throw new Error(await parseErrorDetail(response, "Grading failed."));
       const data = await response.json();
       setExamGrading(data);
       setExamDebug(data.debug || null);
       setExamGradingStatus("done");
       setExamStep("done");
-      startFeedbackStreaming(data, studentAnswer, data.debug?.prompt_tokens || 0);
+      startFeedbackStreaming(data, studentAnswer, data.debug?.prompt_tokens || 0, examModelKey);
       setTimeout(() => saveExamState(activeExamSessionId), 0);
-    } catch (err) { setExamGradingStatus("error"); setExamGradingError(err?.message || "Unexpected error during grading."); }
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        setExamGradingStatus("idle");
+        setExamGradingError("Grading was cancelled.");
+      } else {
+        setExamGradingStatus("error");
+        setExamGradingError(err?.message || "Unexpected error during grading.");
+      }
+    } finally {
+      if (examGradingIntervalRef.current) { clearInterval(examGradingIntervalRef.current); examGradingIntervalRef.current = null; }
+    }
   };
 
   // ── Navigation helpers ─────────────────────────────────────────────────────
@@ -1681,6 +1812,24 @@ export default function App() {
                         {msg.content}
                         {msg.streaming && <span className="cursor-blink">▍</span>}
                       </p>
+                      {msg.role === "assistant" && msg.streaming && (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ marginTop: 4, fontSize: "0.78rem" }}
+                          onClick={() => sessionAbortRefs.current.get(_sessionKey)?.abort()}
+                        >
+                          ■ Stop
+                        </button>
+                      )}
+                      {msg.role === "assistant" && msg.stopped && (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ marginTop: 4, fontSize: "0.78rem" }}
+                          onClick={() => regenerateChat(_sessionKey)}
+                        >
+                          ↺ Regenerate
+                        </button>
+                      )}
                     </div>
                   ))
               }
@@ -1947,6 +2096,7 @@ export default function App() {
                 ? "A random passage and guiding question will be generated."
                 : "Select two works from your library to compare."}
             </p>
+            {renderSessionModelSelector(activeExamSessionId || "__exam__")}
             <button className="btn" onClick={() => onEnterExam(examPaperType)}>Start Exam</button>
           </div>
         )}
@@ -1979,6 +2129,7 @@ export default function App() {
                 })}
               </div>
             )}
+            {renderSessionModelSelector(activeExamSessionId || "__exam__")}
             <button className="btn" style={{ marginTop: 14 }} onClick={onConfirmDocSelection} disabled={examSelectedDocIds.length !== 2}>Continue →</button>
           </div>
         )}
@@ -2005,6 +2156,7 @@ export default function App() {
             {examQuestionText && <div className="question-box">{examQuestionText}</div>}
             <form onSubmit={onSubmitExamAnswer}>
               <p style={{ fontSize: "0.82rem", color: "var(--muted)", marginBottom: 8 }}>Write your response below. No AI assistance during this step.</p>
+              {renderSessionModelSelector(activeExamSessionId || "__exam__")}
               <textarea
                 className="exam-textarea"
                 placeholder="Write your answer here…"
@@ -2012,6 +2164,18 @@ export default function App() {
                 onChange={(e) => setExamAnswer(e.target.value)}
                 disabled={examGradingStatus === "grading"}
               />
+              {examGradingStatus === "grading" && (
+                <div className="msg msg-info" style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                  <span style={{ fontSize: "1.3rem" }}>⏳</span>
+                  <div style={{ flex: 1 }}>
+                    <strong>Grading in progress — this typically takes around a minute.</strong>
+                    <div style={{ fontSize: "0.82rem", marginTop: 2, opacity: 0.85 }}>
+                      You can safely browse the app while waiting. · {examGradingElapsed}s elapsed
+                    </div>
+                  </div>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => examGradingAbortRef.current?.abort()}>Cancel</button>
+                </div>
+              )}
               <button className="btn" type="submit" disabled={!examAnswer.trim() || examGradingStatus === "grading"}>
                 {examGradingStatus === "grading" ? "Grading…" : "Submit for Grading"}
               </button>
@@ -2021,17 +2185,46 @@ export default function App() {
         )}
 
         {/* Results step */}
-        {examStep === "done" && examGrading && (
+        {examStep === "done" && examGrading && (() => {
+          const criteria = examGrading.criteria || [];
+          const streamingCriterion = criteria.find((c) => (examFeedbacks[c.criterion] || {}).status === "streaming");
+          const doneCount = criteria.filter((c) => { const s = (examFeedbacks[c.criterion] || {}).status; return s === "done" || s === "canceled" || s === "error"; }).length;
+          const examModelKey = sessionModels.get(activeExamSessionId || "__exam__") || null;
+          return (
           <div>
+            {/* Prominent feedback-generating banner */}
+            {examFeedbackStatus === "streaming" && (
+              <div className="msg msg-warning" style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>✍</span>
+                <div style={{ flex: 1 }}>
+                  <strong>Detailed coaching feedback is being generated.</strong>
+                  <div style={{ fontSize: "0.82rem", marginTop: 2 }}>
+                    {streamingCriterion
+                      ? `Generating Criterion ${streamingCriterion.criterion} — step ${doneCount + 1} of ${criteria.length}`
+                      : `Step ${doneCount + 1} of ${criteria.length}`}
+                    {" · This may take a minute or two per criterion."}
+                  </div>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={() => examFeedbackAbortRef.current?.abort()}>Stop</button>
+              </div>
+            )}
+
             <div className="exam-results">
               <div className="score-heading">Total: {examGrading.total_score} / {examGrading.max_score}</div>
               <p className="context-badge">
-                {examGrading.context_mode === "titles_only" ? "Graded with: base knowledge (no retrieval)" : "Graded with: RAG (excerpt retrieval)"}
+                {(examGrading.context_mode === "titles_only" || examDebug?.context_mode_effective === "titles_only")
+                  ? `Graded with: base knowledge (no retrieval)${examGrading.context_mode === "chunks" && examDebug?.context_mode_effective === "titles_only" ? " — overridden by router" : ""}`
+                  : "Graded with: RAG (excerpt retrieval)"}
               </p>
 
-              {(examGrading.criteria || []).map((c) => {
-                const fb = examFeedbacks[c.criterion] || { status: "idle", text: "", error: "", isOpen: false };
+              {criteria.map((c) => {
+                const fb = examFeedbacks[c.criterion] || { status: "pending", text: "", error: "", isOpen: false };
                 const isStreaming = fb.status === "streaming";
+                const isPending = fb.status === "pending" || fb.status === "idle";
+                const isCanceled = fb.status === "canceled";
+                const isError = fb.status === "error";
+                const isDone = fb.status === "done";
+                const canGenerate = (isPending || isCanceled || isError) && examFeedbackStatus !== "streaming";
                 return (
                   <div key={c.criterion} className="criterion-card">
                     <div className="criterion-head">
@@ -2042,6 +2235,7 @@ export default function App() {
                       <span className="criterion-label">Examiner note:</span>
                       {c.feedback}
                     </p>
+                    {/* Streaming feedback (inline) */}
                     {(fb.text.length > 0 || isStreaming) && (
                       <details
                         open={fb.isOpen}
@@ -2049,7 +2243,7 @@ export default function App() {
                         style={{ marginTop: 8 }}
                       >
                         <summary style={{ cursor: "pointer", fontSize: "0.82rem", color: "var(--muted)", fontWeight: 600 }}>
-                          {isStreaming ? "Detailed coaching (streaming…)" : "Detailed coaching"}
+                          {isStreaming ? "Detailed coaching (generating…)" : isCanceled ? "Detailed coaching (partial)" : "Detailed coaching"}
                         </summary>
                         <div style={{ marginTop: 6, fontSize: "0.875rem", lineHeight: 1.6, whiteSpace: "pre-wrap", color: "var(--text-2)" }}>
                           {fb.text}
@@ -2057,7 +2251,41 @@ export default function App() {
                         </div>
                       </details>
                     )}
-                    {fb.status === "error" && <p style={{ fontSize: "0.78rem", color: "var(--error)", marginTop: 4 }}>Feedback unavailable: {fb.error}</p>}
+                    {/* Status indicators + action buttons */}
+                    <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      {isPending && fb.text.length === 0 && (
+                        <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Detailed coaching not yet generated.</span>
+                      )}
+                      {isCanceled && (
+                        <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>Generation stopped.</span>
+                      )}
+                      {isError && (
+                        <span style={{ fontSize: "0.78rem", color: "var(--error)" }}>Error: {fb.error}</span>
+                      )}
+                      {canGenerate && (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: "0.78rem" }}
+                          onClick={() => {
+                            setExamFeedbackStatus("streaming");
+                            generateCriterionFeedback(
+                              c.criterion, criteria, examAnswer.trim(), examQuestionText,
+                              examPaperType, examPassage, examSelectedDocIds, examContextMode, examModelKey,
+                            ).then(() => {
+                              setExamFeedbacks((prev) => {
+                                const statuses = Object.values(prev).map((f) => f.status);
+                                if (statuses.every((s) => s === "done" || s === "canceled" || s === "error")) {
+                                  setExamFeedbackStatus("done");
+                                }
+                                return prev;
+                              });
+                            });
+                          }}
+                        >
+                          {isCanceled || isError ? "↺ Regenerate" : "Generate coaching"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -2072,6 +2300,7 @@ export default function App() {
 
             <div style={{ marginTop: 14 }}>
               <button className="btn" onClick={() => {
+                examFeedbackAbortRef.current?.abort();
                 if (examPaperType === "paper1") { setExamAnswer(""); setExamGrading(null); setExamGradingStatus("idle"); setExamGradingError(""); setExamDebug(null); setExamFeedbacks({}); setExamFeedbackStatus("idle"); setExamTokenDebug(null); setExamStep("writing"); }
                 else { setExamSelectedDocIds([]); setExamAnswer(""); setExamQuestionText(""); setExamGrading(null); setExamGradingStatus("idle"); setExamGradingError(""); setExamDebug(null); setExamFeedbacks({}); setExamFeedbackStatus("idle"); setExamTokenDebug(null); setExamStep("setup"); }
               }}>
@@ -2119,6 +2348,41 @@ export default function App() {
                 <div className="dbg-body">
                   <p className="dbg-line"><strong>Inference:</strong> {formatSeconds(examDebug.inference_seconds)}</p>
                   {examDebug.prompt_tokens != null && <p className="dbg-line"><strong>Prompt tokens:</strong> ~{examDebug.prompt_tokens.toLocaleString()}</p>}
+                  {examDebug.routing_reason && (
+                    <p className="dbg-line">
+                      <strong>Routing:</strong> {examDebug.routing_reason}
+                      {examDebug.context_mode_effective && examDebug.context_mode_effective !== examGrading.context_mode && (
+                        <span style={{ color: "var(--warn)", marginLeft: 8 }}>
+                          (overrode selection → {examDebug.context_mode_effective})
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  {examDebug.top_semantic_score != null && (
+                    <p className="dbg-line"><strong>Top semantic score:</strong> {examDebug.top_semantic_score.toFixed(3)}</p>
+                  )}
+                  {examDebug.retrieval_modes?.length > 0 && (
+                    <p className="dbg-line"><strong>Retrieval modes:</strong> {examDebug.retrieval_modes.join(", ")}</p>
+                  )}
+                  {(examDebug.excerpts_per_doc || []).map((docExcerpts, di) =>
+                    docExcerpts.length > 0 ? (
+                      <React.Fragment key={di}>
+                        <div className="dbg-section">Work {di + 1} — Retrieved Excerpts</div>
+                        {docExcerpts.map((ex) => (
+                          <div key={ex.excerpt_id} className="dbg-excerpt">
+                            <p className="dbg-excerpt-meta">
+                              <strong>{ex.excerpt_id}</strong>
+                              {" | "}Score {Number(ex.score || 0).toFixed(3)}
+                              {ex.semantic_score != null && ` | Semantic ${Number(ex.semantic_score).toFixed(3)}`}
+                              {" | "}{ex.page_start === ex.page_end ? `p.${ex.page_start}` : `pp.${ex.page_start}-${ex.page_end}`}
+                              {" | "}{ex.heading || "—"}
+                            </p>
+                            <p className="dbg-excerpt-text">{ex.text || ""}</p>
+                          </div>
+                        ))}
+                      </React.Fragment>
+                    ) : null
+                  )}
                   <div className="dbg-section">Prompt Sent to Model</div>
                   <pre className="dbg-pre">{examDebug.prompt || ""}</pre>
                   <div className="dbg-section">Raw Model Output</div>
@@ -2127,7 +2391,8 @@ export default function App() {
               </details>
             )}
           </div>
-        )}
+          );
+        })()}
       </div>
       </div>
     </div>

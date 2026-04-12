@@ -3,19 +3,19 @@
   "models_folder": "C:\\Users\\yolom\\Desktop\\Internship Nedho\\GGUFs",
   "models": [
  
-    "Gemma-2-9B-It-SPPO-Iter3-Q4_K_M.gguf",
-    "gemma-3-4b-it-Q4_K_M.gguf"
+    "gemma-4-E4B-it-Q4_K_M.gguf",
+    "gemma-4-E2B-it-Q4_K_M.gguf"
 
 
   ],
 
-  "n_ctx_values": [4096, 10000],
+  "n_ctx_values": [ 10000],
   "n_threads": 8,
   "max_tokens": 640,
   "temperature": 0.4,
   "prompt_formats": ["hybrid", "base_knowledge"],
   "context_stress_include_sets": ["basic"],
-  "router_rag_semantic_thresholds": [0.01, 0.1, 0.25, 0.5],
+  "router_rag_semantic_thresholds": [0.25],
   "questions": [
     "Which literary devices are most prominent in the opening of this work, and how do they establish meaning from the first pages?",
     "What is the central tension or conflict in this work and how does the author develop it structurally?",
