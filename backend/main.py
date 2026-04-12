@@ -73,7 +73,7 @@ from retrieval import (
     build_chat_context_result_with_history,
 )
 from corpus_lookup import lookup_confidence, fire_option_c
-from prompt_router import route_prompt_mode, _confidence_threshold
+from prompt_router import route_prompt_mode, preload_context_need_embeddings, _confidence_threshold
 from system_info import get_system_info
 import database
 import quality
@@ -276,6 +276,10 @@ if WIPE_CHAT_HISTORY_ON_START:
 async def _startup() -> None:
     app.state.llm_semaphore = asyncio.Semaphore(LLM_MAX_CONCURRENT)
     app.state.llm_queue_count = 0
+    # Seed context-need question dataset and preload embeddings
+    from seed_context_scores import seed_context_scores
+    await run_in_threadpool(seed_context_scores)
+    await run_in_threadpool(preload_context_need_embeddings)
 
 
 @asynccontextmanager
@@ -443,6 +447,7 @@ class ChatDebugResponse(BaseModel):
     history_persisted: bool = True
     history_persist_error: str | None = None
     routing_reason: str | None = None
+    routing_debug: dict | None = None
 
 
 class ChatResponse(BaseModel):
@@ -1267,15 +1272,17 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
         ) from exc
     retrieval_seconds = time.perf_counter() - retrieval_started
 
-    # Determine prompt mode: explicit override or auto-route using raw cosine similarity
+    # Determine prompt mode: explicit override or auto-route using context-need scoring
     top_semantic_score = context_result.retrieved_excerpts[0].semantic_score if context_result.retrieved_excerpts else None
     has_history = len(history_turns) > 0
     routing_reason = "override"
+    _routing_debug: dict = {}
     if payload.prompt_format is not None:
         chosen_mode = payload.prompt_format
     else:
-        chosen_mode, routing_reason = route_prompt_mode(
-            record.known_work_confidence, top_semantic_score, has_history, record.document_id
+        chosen_mode, routing_reason, _routing_debug = route_prompt_mode(
+            record.known_work_confidence, top_semantic_score, has_history, record.document_id,
+            query=latest_user_question,
         )
 
     reply_text = ""
@@ -1491,6 +1498,7 @@ async def chat_endpoint(payload: ChatRequest, background_tasks: BackgroundTasks)
             history_persisted=history_persisted,
             history_persist_error=history_persist_error,
             routing_reason=routing_reason,
+            routing_debug=_routing_debug if _routing_debug else None,
         ),
     )
 
@@ -1609,15 +1617,17 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
         ) from exc
     retrieval_seconds = time.perf_counter() - retrieval_started
 
-    # Determine prompt mode: explicit override or auto-route using raw cosine similarity
+    # Determine prompt mode: explicit override or auto-route using context-need scoring
     top_semantic_score = context_result.retrieved_excerpts[0].semantic_score if context_result.retrieved_excerpts else None
     has_history = len(history_turns) > 0
     routing_reason = "override"
+    _routing_debug_stream: dict = {}
     if payload.prompt_format is not None:
         chosen_mode = payload.prompt_format
     else:
-        chosen_mode, routing_reason = route_prompt_mode(
-            record.known_work_confidence, top_semantic_score, has_history, record.document_id
+        chosen_mode, routing_reason, _routing_debug_stream = route_prompt_mode(
+            record.known_work_confidence, top_semantic_score, has_history, record.document_id,
+            query=latest_user_question,
         )
 
     # Capture mutable state for the generator closure
@@ -1629,6 +1639,7 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
     _request_started = request_started
     _chosen_mode = chosen_mode
     _routing_reason = routing_reason
+    _routing_debug_closure = _routing_debug_stream
     _session_id = payload.session_id
 
     async def _event_generator() -> AsyncGenerator[str, None]:
@@ -1639,6 +1650,8 @@ async def chat_stream_endpoint(payload: ChatRequest) -> StreamingResponse:
             "retrieved_excerpts": [e.to_debug_dict() for e in _context_result.retrieved_excerpts] if _chosen_mode == "rag" else [],
             "prompt_mode": _chosen_mode,
         })
+        if _routing_debug_closure:
+            yield _sse_event({"type": "routing_debug", **_routing_debug_closure})
 
         reply_text = ""
         final_prompt = ""
@@ -2029,6 +2042,7 @@ class ExamDebugInfo(BaseModel):
     top_semantic_score: float | None = None
     excerpts_per_doc: list[list[dict]] = []
     context_mode_effective: str | None = None
+    routing_debug: dict | None = None
 
 
 class SubmitAnswerResponse(BaseModel):
@@ -2388,6 +2402,7 @@ async def exam_submit_answer(payload: SubmitAnswerRequest) -> SubmitAnswerRespon
             top_semantic_score=result.top_semantic_score,
             excerpts_per_doc=result.excerpts_per_doc,
             context_mode_effective=result.context_mode_effective,
+            routing_debug=result.routing_debug if result.routing_debug else None,
         ),
     )
 

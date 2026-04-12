@@ -114,6 +114,7 @@ class GradingResult:
     routing_reason: str = ""
     top_semantic_score: float | None = None
     excerpts_per_doc: list[list[dict]] = field(default_factory=list)
+    routing_debug: dict = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -288,6 +289,7 @@ def _parse_grading_output(
     prompt: str,
     retrieval_result: MultiDocRetrievalResult | None = None,
     routing_reason: str = "",
+    routing_debug: dict | None = None,
 ) -> GradingResult:
     criteria_defs = CRITERIA_BY_PAPER[paper_type]
     criterion_map: dict[str, tuple[str, int]] = {
@@ -359,6 +361,7 @@ def _parse_grading_output(
         routing_reason=routing_reason,
         top_semantic_score=retrieval_result.top_semantic_score if retrieval_result else None,
         excerpts_per_doc=retrieval_result.excerpts_per_doc if retrieval_result else [],
+        routing_debug=routing_debug or {},
     )
 
 
@@ -389,6 +392,7 @@ def grade_answer(
 
     retrieval_result: MultiDocRetrievalResult | None = None
     routing_reason: str = ""
+    routing_debug: dict = {}
     context_mode_effective: str = context_mode
 
     if paper_type == "paper1":
@@ -409,11 +413,13 @@ def grade_answer(
                 student_answer=student_answer,
                 question=question,
             )
-            chosen_mode, routing_reason = route_prompt_mode(
+            chosen_mode, routing_reason, _routing_debug = route_prompt_mode(
                 known_work_confidence=None,
                 top_semantic_score=retrieval_result.top_semantic_score,
                 has_conversation_history=False,
+                query=student_answer[:2000] if student_answer else None,
             )
+            routing_debug = _routing_debug
             if chosen_mode == "base_knowledge":
                 # Router determined retrieval signal is too weak; fall back to titles
                 lines = [f"Work {i + 1}: {t}" for i, t in enumerate(doc_titles or [])]
@@ -438,6 +444,7 @@ def grade_answer(
         prompt,
         retrieval_result=retrieval_result,
         routing_reason=routing_reason,
+        routing_debug=routing_debug,
     )
 
 

@@ -251,11 +251,12 @@ def run_one_question(
 
         if prompt_format == "hybrid":
             has_history = len(session_messages) > 0
-            router_chosen_format, router_reason = route_prompt_mode(
+            router_chosen_format, router_reason, _router_debug = route_prompt_mode(
                 known_work_confidence,
                 top_semantic_score,
                 has_history,
                 rag_semantic_threshold=router_rag_semantic_threshold,
+                query=question if question else None,
             )
             effective_format = router_chosen_format
         else:

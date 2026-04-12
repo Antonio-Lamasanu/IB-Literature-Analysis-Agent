@@ -1,0 +1,1457 @@
+[
+  {
+    "question": "Who is the author of this book?",
+    "score": 0.0,
+    "category": "work_identity"
+  },
+  {
+    "question": "What genre is this work?",
+    "score": 0.05,
+    "category": "work_identity"
+  },
+  {
+    "question": "When was this book published?",
+    "score": 0.05,
+    "category": "work_identity"
+  },
+  {
+    "question": "What is the title of the work you are studying?",
+    "score": 0.0,
+    "category": "work_identity"
+  },
+  {
+    "question": "Have you heard about this author till now?",
+    "score": 0.0,
+    "category": "work_identity"
+  },
+  {
+    "question": "Have you heard about this book till now? In which context or circumstance?",
+    "score": 0.05,
+    "category": "work_identity"
+  },
+  {
+    "question": "Who do you think the text was originally written for?",
+    "score": 0.1,
+    "category": "work_identity"
+  },
+  {
+    "question": "Which global issue is this book related to?",
+    "score": 0.1,
+    "category": "work_identity"
+  },
+  {
+    "question": "What is the purpose of studying literature and what do we gain from it?",
+    "score": 0.0,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Why do you think literature is still important today?",
+    "score": 0.0,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Can the same text be understood in different ways? Why?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Do you think there is one correct interpretation or many valid ones? Explain.",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What makes an interpretation strong or convincing?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Why is using evidence from the text important?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "How can readers interpret the same text in different ways?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What makes a literary text become a classic?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Who decides which texts become classics?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What social, political, or cultural power structures influence which texts are valued?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Why might some authors or cultures be excluded from the literary canon?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "How do definitions of classic differ across countries and cultures?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What personal criteria do you use to decide whether a text deserves classic status?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Can a literary text have a negative or harmful effect on its audience?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "When, if ever, is censoring a literary text justified?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Do you think form and meaning can be separated, or are they always connected? Explain your idea.",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Why might a literary text be valuable even if it does not give direct facts?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Is it fair or useful to analyze older texts using modern values and ideas?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What are the limits of doing this?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What special skills do you need to read and analyze a poem or novel (for example, noticing imagery or symbolism)?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "How is reading a poem or story different from reading a news article about the same topic?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "How does language change depending on the type of text?",
+    "score": 0.1,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What language features are typical of this literary form (novel, play, poem, graphic text)?",
+    "score": 0.1,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Do a poem and an informational text have different values to you as a reader?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What emotions or ideas does a literary text create compared to an informational text?",
+    "score": 0.1,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What does literature help you understand that factual texts may not?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Do literary forms (poems, plays, novels) restrict writers or help them create meaning?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "How can authors break or adapt rules to create new effects?",
+    "score": 0.1,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Does knowing literary rules and conventions make a text easier to understand, or can it sometimes confuse readers?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "When might too much technical knowledge about literature reduce enjoyment or personal engagement?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "How can reading inspire writers to reshape or recreate earlier texts?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "How is meaning created and understood in a literary text?",
+    "score": 0.1,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What are the typical features of this type of text (for example poem, play, novel, speech)?",
+    "score": 0.1,
+    "category": "meta_literary"
+  },
+  {
+    "question": "How does placing a text into a genre or category influence how readers interpret it?",
+    "score": 0.15,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Can labeling a text limit or shape what readers notice or expect?",
+    "score": 0.1,
+    "category": "meta_literary"
+  },
+  {
+    "question": "To what extent can literary texts be used as sources of historical information?",
+    "score": 0.1,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Why might some translations be more effective than others?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "How can reviews, critics, teachers, or classmates shape the way you understand a text?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "Can popular opinion change the perceived meaning or value of a literary work?",
+    "score": 0.05,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What have you learned about literature by studying these texts?",
+    "score": 0.1,
+    "category": "meta_literary"
+  },
+  {
+    "question": "What is the socio-cultural background of the work?",
+    "score": 0.15,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What is the historical context in which the work has been written?",
+    "score": 0.15,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What are the main historical events from the time the author of the work you are reading lived?",
+    "score": 0.1,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What are the main events in the life of the author you are studying?",
+    "score": 0.1,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "Can an author write successfully about a culture of which they are not a part of?",
+    "score": 0.05,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What social, historical, or cultural context influenced the author?",
+    "score": 0.15,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What historical or cultural factors influenced the author when writing this text?",
+    "score": 0.2,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "Why does the time and culture in which a text is written and read matter?",
+    "score": 0.1,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "How might these conditions shape the characters and themes?",
+    "score": 0.2,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "How might the original audience have understood this text differently from modern readers?",
+    "score": 0.2,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "Which historical or social changes could alter the interpretation of this work?",
+    "score": 0.2,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "How well can a modern reader understand a text that was written in a very different historical or cultural context?",
+    "score": 0.15,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What problems or risks can occur when an author writes about a culture they do not belong to?",
+    "score": 0.1,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "Is what we learn about a culture from literature always accurate or reliable?",
+    "score": 0.1,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What can literature teach us about the beliefs, values, and traditions of a culture?",
+    "score": 0.1,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "How much can literature teach us about another culture?",
+    "score": 0.1,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What can readers from different cultures or time periods learn from a literary text?",
+    "score": 0.1,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "How does the translator's time and cultural context influence the translation?",
+    "score": 0.1,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "How can readers judge whether a translation is good quality?",
+    "score": 0.05,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What meaning or effects might be lost or changed in translation?",
+    "score": 0.15,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What differences do you notice between reading a text in the original language and in translation?",
+    "score": 0.15,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "How could language barriers or translation affect meaning?",
+    "score": 0.15,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What difficulties can modern readers face when reading this text?",
+    "score": 0.15,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "How should we approach texts that come from unfamiliar contexts?",
+    "score": 0.1,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "What aspects of this text feel unfamiliar or different from your own culture or time?",
+    "score": 0.2,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "How important is knowing the background (time, place, culture) of a text for understanding its meaning?",
+    "score": 0.15,
+    "category": "historical_cultural_context"
+  },
+  {
+    "question": "Was this your experience with the work so far?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "What is your experience with the work so far?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "Was this book difficult for you to understand?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "Did you have to do research to fully understand this book?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "Was this book revealing another meaning after a second reading?",
+    "score": 0.1,
+    "category": "reader_response"
+  },
+  {
+    "question": "What feedback have you received and how will you apply it?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "What was your biggest challenge in this task?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "What progress are you most proud of?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "What new skills or knowledge did you develop while studying this work?",
+    "score": 0.1,
+    "category": "reader_response"
+  },
+  {
+    "question": "What was difficult for you and how did you overcome it?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "What strategies helped you improve your analysis or writing?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "What did you personally learn from reading this work?",
+    "score": 0.1,
+    "category": "reader_response"
+  },
+  {
+    "question": "What emotions or thoughts did this text make you feel or have?",
+    "score": 0.15,
+    "category": "reader_response"
+  },
+  {
+    "question": "How did this text affect your thoughts, emotions, or values?",
+    "score": 0.15,
+    "category": "reader_response"
+  },
+  {
+    "question": "Which issue has this book confirmed or deepened your views on?",
+    "score": 0.15,
+    "category": "reader_response"
+  },
+  {
+    "question": "How has this book confirmed or deepened your views?",
+    "score": 0.15,
+    "category": "reader_response"
+  },
+  {
+    "question": "How has this book impacted the way you think about writing?",
+    "score": 0.1,
+    "category": "reader_response"
+  },
+  {
+    "question": "How has this book impacted the way you think about this topic?",
+    "score": 0.1,
+    "category": "reader_response"
+  },
+  {
+    "question": "How has this book impacted the way you think about reading?",
+    "score": 0.1,
+    "category": "reader_response"
+  },
+  {
+    "question": "What was it about the work that transformed your thinking?",
+    "score": 0.15,
+    "category": "reader_response"
+  },
+  {
+    "question": "What were your first impressions of the text?",
+    "score": 0.15,
+    "category": "reader_response"
+  },
+  {
+    "question": "What questions did the text raise for you?",
+    "score": 0.2,
+    "category": "reader_response"
+  },
+  {
+    "question": "What do you need to research further?",
+    "score": 0.1,
+    "category": "reader_response"
+  },
+  {
+    "question": "How has your understanding of the text changed since your first reading?",
+    "score": 0.2,
+    "category": "reader_response"
+  },
+  {
+    "question": "How has rereading this text changed your interpretation over time?",
+    "score": 0.2,
+    "category": "reader_response"
+  },
+  {
+    "question": "How has interpreting this text changed the way you think about its themes or characters?",
+    "score": 0.3,
+    "category": "reader_response"
+  },
+  {
+    "question": "Did this text make you question your beliefs or assumptions? How?",
+    "score": 0.15,
+    "category": "reader_response"
+  },
+  {
+    "question": "Did the story make you reflect on issues outside the text (for example society, relationships, power, or identity)?",
+    "score": 0.15,
+    "category": "reader_response"
+  },
+  {
+    "question": "In what ways can this text be both enjoyable to read and useful for academic analysis?",
+    "score": 0.15,
+    "category": "reader_response"
+  },
+  {
+    "question": "What new ideas or perspectives did this text help you understand?",
+    "score": 0.2,
+    "category": "reader_response"
+  },
+  {
+    "question": "Did you identify with any character or situation? Why?",
+    "score": 0.2,
+    "category": "reader_response"
+  },
+  {
+    "question": "How did these challenges help you think more deeply about the topic?",
+    "score": 0.1,
+    "category": "reader_response"
+  },
+  {
+    "question": "What specific questions do you want feedback on?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "Which part of your analysis are you least confident about?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "How can you improve your argument based on your tutor's comments?",
+    "score": 0.05,
+    "category": "reader_response"
+  },
+  {
+    "question": "What parts of the text were difficult, uncomfortable, or challenging to read?",
+    "score": 0.35,
+    "category": "reader_response"
+  },
+  {
+    "question": "How might different readers react differently to this same text?",
+    "score": 0.25,
+    "category": "reader_response"
+  },
+  {
+    "question": "What is the main aim of the work that you are studying? How do you know this?",
+    "score": 0.3,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "Why do you think the author wrote this work?",
+    "score": 0.25,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "What is the central idea or message of this work?",
+    "score": 0.3,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "Which is the point of view presented by this book?",
+    "score": 0.3,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "What global issue does this text engage with (power, inequality, identity, conflict, environment)?",
+    "score": 0.25,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "Which concept is most relevant to this work and why?",
+    "score": 0.3,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "Which is the main topic of this book?",
+    "score": 0.25,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How successfully has the book presented a particular point of view?",
+    "score": 0.4,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How similar is the world in the work you are reading to the real world?",
+    "score": 0.35,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "Why is this issue relevant today?",
+    "score": 0.25,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "What social or global issues appear in this text?",
+    "score": 0.3,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "Is there injustice or inequality presented in the text?",
+    "score": 0.35,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "What cultural assumptions are present?",
+    "score": 0.35,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How does the text construct identity or represent culture?",
+    "score": 0.4,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How does language reflect social or cultural power in the text?",
+    "score": 0.4,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How does the author use language to show class, gender, power, or identity?",
+    "score": 0.45,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How does the reader's background influence how they understand the text?",
+    "score": 0.2,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "What modern perspectives change the way we read this work today?",
+    "score": 0.25,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "Why might this text remain relevant?",
+    "score": 0.25,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "What themes might become more important today than at the time of publication?",
+    "score": 0.25,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How does a text's meaning or importance change as society changes?",
+    "score": 0.2,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How might readers in the past have understood this text differently from modern readers?",
+    "score": 0.25,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "Which themes or ideas feel more important today, and why?",
+    "score": 0.25,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How do texts reflect and shape cultural traditions and behavior?",
+    "score": 0.25,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "What cultural practices or social norms are shown in this text?",
+    "score": 0.35,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How might this text influence the way people think about these practices?",
+    "score": 0.3,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "What does this text help you understand about the world or about yourself?",
+    "score": 0.2,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "What kinds of things can literature teach us about people, society, or the world?",
+    "score": 0.1,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "How does the author use perspective to influence the reader?",
+    "score": 0.45,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "What does this text reveal about the values, traditions, or social issues of its culture?",
+    "score": 0.35,
+    "category": "theme_interpretation"
+  },
+  {
+    "question": "Which are the main, secondary and episodic characters of this book?",
+    "score": 0.25,
+    "category": "character_analysis"
+  },
+  {
+    "question": "Which characters represent some aspect of the author's identity?",
+    "score": 0.35,
+    "category": "character_analysis"
+  },
+  {
+    "question": "Which characters do you find similar to your personality?",
+    "score": 0.2,
+    "category": "character_analysis"
+  },
+  {
+    "question": "Which characters do you identify with?",
+    "score": 0.2,
+    "category": "character_analysis"
+  },
+  {
+    "question": "Which character from this book do you really admire?",
+    "score": 0.2,
+    "category": "character_analysis"
+  },
+  {
+    "question": "How recognizable are the characters and their attitudes?",
+    "score": 0.3,
+    "category": "character_analysis"
+  },
+  {
+    "question": "How much are the characters and their attitudes similar to real people?",
+    "score": 0.25,
+    "category": "character_analysis"
+  },
+  {
+    "question": "To what extent have you identified with or felt challenged by the perspectives offered in the book?",
+    "score": 0.25,
+    "category": "character_analysis"
+  },
+  {
+    "question": "How does the content and structure of the work make this character stand out among the others in the book?",
+    "score": 0.55,
+    "category": "character_analysis"
+  },
+  {
+    "question": "How does the narrator's voice or point of view influence your understanding of the story?",
+    "score": 0.5,
+    "category": "character_analysis"
+  },
+  {
+    "question": "How do differences in age, gender, background, or identity shape the viewpoints shown?",
+    "score": 0.4,
+    "category": "character_analysis"
+  },
+  {
+    "question": "How far do you think it was the intention of the work to elicit this response in you?",
+    "score": 0.35,
+    "category": "character_analysis"
+  },
+  {
+    "question": "Which perspectives are given more importance or more space in the text? Why?",
+    "score": 0.55,
+    "category": "character_analysis"
+  },
+  {
+    "question": "What perspectives are missing or underrepresented in the text?",
+    "score": 0.5,
+    "category": "character_analysis"
+  },
+  {
+    "question": "Can opposing perspectives in the same text both be meaningful or valid? Why or why not?",
+    "score": 0.3,
+    "category": "character_analysis"
+  },
+  {
+    "question": "How does including multiple viewpoints deepen your understanding of the issue?",
+    "score": 0.35,
+    "category": "character_analysis"
+  },
+  {
+    "question": "How does this text present different viewpoints on the same topic or conflict?",
+    "score": 0.5,
+    "category": "character_analysis"
+  },
+  {
+    "question": "Which literary devices are most important in this extract (e.g., symbolism, irony, narrative voice)?",
+    "score": 0.8,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How do these techniques contribute to meaning?",
+    "score": 0.55,
+    "category": "literary_technique"
+  },
+  {
+    "question": "What techniques does the author use to create meaning (language, imagery, symbolism, narration)?",
+    "score": 0.5,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does the author's stylistic voice (tone, register, sentence structure) influence interpretation?",
+    "score": 0.55,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does the author use language to shape meaning and tone?",
+    "score": 0.55,
+    "category": "literary_technique"
+  },
+  {
+    "question": "In what ways does the use of language in the works you have read represent in itself a view of the world?",
+    "score": 0.5,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How do these language choices shape the reader's experience?",
+    "score": 0.5,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does structure, language, and style support this argument?",
+    "score": 0.6,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does the organization of the text (chapters, scenes, chronology) guide understanding?",
+    "score": 0.55,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How is the text organized (chapters, scenes, timeline)?",
+    "score": 0.55,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does this structure help develop ideas, characters, or tension?",
+    "score": 0.6,
+    "category": "literary_technique"
+  },
+  {
+    "question": "What language choices (tone, imagery, description) shape how you imagine the setting or characters?",
+    "score": 0.6,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does the author use or adapt these conventions?",
+    "score": 0.5,
+    "category": "literary_technique"
+  },
+  {
+    "question": "What is the effect of using an unreliable narrator on the reader's trust and interpretation?",
+    "score": 0.55,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does delayed revelation of information shape suspense or reader engagement?",
+    "score": 0.6,
+    "category": "literary_technique"
+  },
+  {
+    "question": "What effect does starting a story in the middle or end of a character's life have on the reader's understanding?",
+    "score": 0.6,
+    "category": "literary_technique"
+  },
+  {
+    "question": "Why would an author intentionally create uncertainty for the reader?",
+    "score": 0.4,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How should readers deal with ambiguity or incomplete information in a text?",
+    "score": 0.35,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does the chosen literary form help show character development or personal growth?",
+    "score": 0.55,
+    "category": "literary_technique"
+  },
+  {
+    "question": "Which stylistic or structural elements make this text clearly belong to this form?",
+    "score": 0.5,
+    "category": "literary_technique"
+  },
+  {
+    "question": "What differences do you notice when you compare this form to another literary form?",
+    "score": 0.15,
+    "category": "literary_technique"
+  },
+  {
+    "question": "Has this type of text changed over time? If yes, how?",
+    "score": 0.1,
+    "category": "literary_technique"
+  },
+  {
+    "question": "Do you think this form still follows traditional rules, or does it challenge them? Explain.",
+    "score": 0.35,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does the way a text is built and written influence its message?",
+    "score": 0.4,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How do texts help us understand the world while also questioning our beliefs?",
+    "score": 0.2,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does language show social groups and identities?",
+    "score": 0.3,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How do these language choices affect the reader's understanding of characters or society?",
+    "score": 0.45,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does the author's language choices (imagery, word choice, symbols) shape what the text communicates?",
+    "score": 0.55,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How do the form and structure of the text (for example layout, chapters, scenes, or patterns) help create meaning?",
+    "score": 0.55,
+    "category": "literary_technique"
+  },
+  {
+    "question": "Why do you think the author chose this structure instead of another one?",
+    "score": 0.55,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How would the meaning change if the structure or style were different?",
+    "score": 0.6,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How can different literary techniques (imagery, dialogue, symbolism) lead to similar emotional or ideological effects?",
+    "score": 0.45,
+    "category": "literary_technique"
+  },
+  {
+    "question": "Why might an author choose one literary form instead of another to communicate a specific message?",
+    "score": 0.4,
+    "category": "literary_technique"
+  },
+  {
+    "question": "What can you learn by comparing different translations of the same text?",
+    "score": 0.3,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How can adaptations (films, stage versions, rewrites) reveal new meanings in the original text?",
+    "score": 0.35,
+    "category": "literary_technique"
+  },
+  {
+    "question": "How does the format change your understanding or emotional response?",
+    "score": 0.35,
+    "category": "literary_technique"
+  },
+  {
+    "question": "Which moments or passages affected you most, and why?",
+    "score": 0.65,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "Which quotations best support your interpretation?",
+    "score": 0.75,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How does this quotation connect to a theme, character, or stylistic feature?",
+    "score": 0.8,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What is your main argument (thesis) about the text?",
+    "score": 0.65,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What evidence supports your analysis or evaluation?",
+    "score": 0.7,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How many possible interpretations of the work are you reading or which of its elements can you find? Give me at least 2 examples of such interpretations.",
+    "score": 0.65,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What possible interpretations can you already identify?",
+    "score": 0.55,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How is this issue presented through characters or events?",
+    "score": 0.65,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How does the author guide the reader's understanding through language and structure?",
+    "score": 0.6,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What aspects of the text challenge your assumptions, values, or comfort zone?",
+    "score": 0.55,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How does the cultural context of the work you are studying at the moment revealed?",
+    "score": 0.55,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What is your own interpretation of this text? What evidence supports it?",
+    "score": 0.7,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How might critics or readers from the past or present interpret this text differently?",
+    "score": 0.45,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What new perspective does your response offer?",
+    "score": 0.5,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "Do you consider the work you are analysing now as effective in creating a new world in your mind? Why? What contributes to the creation of that world?",
+    "score": 0.4,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How does a work make its reader creative when it comes to exploring the possible different meanings of that work?",
+    "score": 0.4,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What is the main topic of this book?",
+    "score": 0.25,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How accessible is this work to you as a reader?",
+    "score": 0.15,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What might prevent a reader understanding this work?",
+    "score": 0.2,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What types of evidence should you use to support your ideas (quotes, techniques, context)?",
+    "score": 0.1,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "Why is explanation more important than just quoting?",
+    "score": 0.05,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How will you structure your response to meet the command term?",
+    "score": 0.05,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What exactly is the question asking you to do?",
+    "score": 0.05,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "Can you explain this term clearly in your own words?",
+    "score": 0.05,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "Are there alternative interpretations you should address?",
+    "score": 0.45,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What work from the ones you read till now has changed your thinking? What is being transformed: your views on reading, on writing or on an issue?",
+    "score": 0.15,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "Which ideas, themes, or messages from these works stayed with you most?",
+    "score": 0.3,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What is the central idea or message of this work?",
+    "score": 0.3,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How does this text follow the usual rules of its literary form, and how does it break or change them?",
+    "score": 0.55,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "What new ideas, perspectives, or social issues does the text help you understand?",
+    "score": 0.3,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "How does the narrator's voice or point of view influence your understanding of the story?",
+    "score": 0.5,
+    "category": "specific_text_analysis"
+  },
+  {
+    "question": "Compare two works that you have read in the course. How does comparing them change how you understand each work? How do the works seem different after this comparison?",
+    "score": 0.4,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "What themes are shared between the two works? How are they treated differently?",
+    "score": 0.45,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How do the authors' stylistic choices shape meaning in each text?",
+    "score": 0.55,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "What similarities or differences exist in narrative voice or perspective?",
+    "score": 0.55,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How does context influence the messages of each work?",
+    "score": 0.5,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "What shared human experiences (for example love, loss, migration, identity) connect the texts you are studying?",
+    "score": 0.4,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "What patterns of connection can you identify across your selected works?",
+    "score": 0.5,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How has comparing this text with another work changed your understanding of both texts?",
+    "score": 0.5,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How can very different texts still share similar ideas, themes, or techniques?",
+    "score": 0.35,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How can different artistic methods produce similar reader responses?",
+    "score": 0.3,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "What patterns or ideas become clearer when you read multiple works by the same author?",
+    "score": 0.4,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How can reading several texts by one writer deepen your understanding of their themes or style?",
+    "score": 0.35,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How does recognizing references to other texts change your understanding of a story?",
+    "score": 0.45,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "What new insights can you gain by reading two texts that explore the same theme in different ways?",
+    "score": 0.45,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How can texts from very different cultures or time periods achieve the same overall purpose or message?",
+    "score": 0.3,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How can studying older and newer versions of the same genre help you understand literary evolution?",
+    "score": 0.2,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How do texts from the same literary form show gradual change across generations?",
+    "score": 0.2,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How do changing social values influence the way literary forms are adapted over time?",
+    "score": 0.2,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "What similarities can you find between changes in literature and changes in other cultural forms (fashion, music, art)?",
+    "score": 0.2,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How does comparing texts and interpreting them change the way you understand literature or the world?",
+    "score": 0.3,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "In which ways the global issue of your choice is presented through the content and form of two of the works that you have studied?",
+    "score": 0.5,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How can one text present different points of view about the same topic or theme?",
+    "score": 0.45,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "How can comparing texts and interpreting them change the way you understand literature or the world?",
+    "score": 0.3,
+    "category": "comparative_cross_text"
+  },
+  {
+    "question": "Write an alternative ending or part of the book you are reading that changes its interpretation, but that tries to replicate the author's style.",
+    "score": 0.75,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How can you reinterpret the text creatively (monologue, diary entry, alternative ending)?",
+    "score": 0.65,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How does your creative response stay faithful to the original text?",
+    "score": 0.65,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "What stylistic elements are essential to preserve the message?",
+    "score": 0.65,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "What themes or characters will you highlight in your response?",
+    "score": 0.6,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How would meaning shift if the narrator or perspective changed?",
+    "score": 0.6,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "What would change if this text were written in another genre or medium?",
+    "score": 0.55,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How would the text change if written in a different time period?",
+    "score": 0.5,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "What happens if the setting is modernized or relocated?",
+    "score": 0.6,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "Which character, moment, or conflict do you want to explore creatively?",
+    "score": 0.6,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How can you show understanding of the original text through your creative response?",
+    "score": 0.65,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "What tone and style will you adopt to match or contrast the author's voice?",
+    "score": 0.6,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How does your creative piece reflect the themes or issues of the original work?",
+    "score": 0.65,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "Which elements must remain unchanged to preserve the author's core message?",
+    "score": 0.65,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "What transformation would best highlight the central theme?",
+    "score": 0.6,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How would meaning shift if you changed the narrator, tense, or point of view?",
+    "score": 0.6,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "What would change if this text were rewritten in another form (play to short story, novel to poem, prose to script)?",
+    "score": 0.55,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How would readers from different generations respond emotionally or ethically to this text?",
+    "score": 0.35,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How would readers from different eras interpret this text differently?",
+    "score": 0.3,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "What political or social perspectives could influence modern interpretations?",
+    "score": 0.3,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "Which elements might be controversial or misunderstood today?",
+    "score": 0.35,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How would readers from marginalized or dominant groups respond differently?",
+    "score": 0.3,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "How might readers from different cultures interpret the characters or values differently?",
+    "score": 0.3,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "Can transforming a text help clarify ideas that were unclear before?",
+    "score": 0.35,
+    "category": "transformation_creative"
+  },
+  {
+    "question": "Summarize chapter 3 of this book",
+    "score": 0.95,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What are the key plot events in this work?",
+    "score": 0.8,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What are the Seven Commandments in this book?",
+    "score": 0.9,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What specific event happens in the opening scene?",
+    "score": 0.9,
+    "category": "highly_specific"
+  },
+  {
+    "question": "Analyze this specific quote from the text",
+    "score": 1.0,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What does the character say when they first meet?",
+    "score": 0.95,
+    "category": "highly_specific"
+  },
+  {
+    "question": "How is the main conflict first introduced in the text?",
+    "score": 0.85,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What happens at the climax of this story?",
+    "score": 0.85,
+    "category": "highly_specific"
+  },
+  {
+    "question": "How does the story end?",
+    "score": 0.8,
+    "category": "highly_specific"
+  },
+  {
+    "question": "Describe the relationship between two specific characters in the text",
+    "score": 0.85,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What is the significance of the title in relation to the text?",
+    "score": 0.7,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What are the exact words used to describe the setting?",
+    "score": 1.0,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What happens in this passage?",
+    "score": 1.0,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What does this specific symbol represent in the text?",
+    "score": 0.8,
+    "category": "highly_specific"
+  },
+  {
+    "question": "How is a specific scene structured?",
+    "score": 0.85,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What foreshadowing appears in chapter 1?",
+    "score": 0.85,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What are the key events in the plot of this work?",
+    "score": 0.8,
+    "category": "highly_specific"
+  },
+  {
+    "question": "What is said during the confrontation between the main characters?",
+    "score": 0.95,
+    "category": "highly_specific"
+  },
+  {
+    "question": "Which specific passage best illustrates the theme of power?",
+    "score": 0.85,
+    "category": "highly_specific"
+  }
+]

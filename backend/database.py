@@ -115,6 +115,13 @@ CREATE TABLE IF NOT EXISTS paper2_questions (
     id   INTEGER PRIMARY KEY,
     text TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS query_context_scores (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    question  TEXT NOT NULL UNIQUE,
+    score     REAL NOT NULL,
+    category  TEXT NOT NULL
+);
 """
 
 

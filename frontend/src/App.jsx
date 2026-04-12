@@ -61,6 +61,85 @@ function shortModelName(filename) {
   return name.replace(/-/g, " ").replace(/\b(\w)/g, (c) => c.toUpperCase());
 }
 
+// ─── Router Debug Panel ───────────────────────────────────────────────────────
+
+function ScoreBar({ label, value, threshold, color = "#6366f1" }) {
+  const pct = Math.max(0, Math.min(1, value ?? 0)) * 100;
+  const thPct = threshold != null ? Math.max(0, Math.min(1, threshold)) * 100 : null;
+  return (
+    <div className="rdbg-row">
+      <span className="rdbg-label">{label}</span>
+      <div className="rdbg-bar-wrap" style={{ position: "relative" }}>
+        <div className="rdbg-bar" style={{ width: `${pct}%`, background: color }} />
+        {thPct != null && (
+          <div className="rdbg-threshold-mark" style={{ left: `${thPct}%` }} title={`threshold: ${threshold}`} />
+        )}
+      </div>
+      <span className="rdbg-val">{value != null ? value.toFixed(3) : "n/a"}</span>
+    </div>
+  );
+}
+
+function RouterDebugPanel({ debug }) {
+  if (!debug) return null;
+  const isRag = debug.mode === "rag";
+  const modeClass = isRag ? "rdbg-mode-rag" : "rdbg-mode-bk";
+  const modeLabel = isRag ? "RAG" : "Base Knowledge";
+  const reasonMap = {
+    context_need_high: "context need ↑",
+    known_work_confidence_high: "known work confidence ↑",
+    has_conversation_history: "conversation history",
+    top_semantic_score_high: "semantic score ↑ (legacy)",
+    default: "default",
+    override: "manual override",
+  };
+  return (
+    <details className="rdbg-details">
+      <summary>
+        ▸ Router Debug &nbsp;
+        <span className={`rdbg-mode-badge ${modeClass}`}>{modeLabel}</span>
+        &nbsp;·&nbsp;{reasonMap[debug.reason] ?? debug.reason}
+      </summary>
+      <div className="rdbg-body">
+        <ScoreBar
+          label="Context need score"
+          value={debug.context_need_score}
+          threshold={debug.context_need_threshold}
+        />
+        <ScoreBar
+          label="Known work confidence"
+          value={debug.known_work_confidence}
+          threshold={debug.confidence_threshold}
+          color="#8b5cf6"
+        />
+        <ScoreBar
+          label="Top semantic score"
+          value={debug.top_semantic_score}
+          threshold={debug.semantic_threshold}
+          color="#06b6d4"
+        />
+        {(debug.top_k_matches ?? []).length > 0 && (
+          <div className="rdbg-matches">
+            <div className="dbg-section" style={{ fontSize: "0.73rem", margin: "8px 0 6px" }}>
+              Top matched questions (K={debug.top_k_matches.length})
+            </div>
+            {debug.top_k_matches.map((m, i) => (
+              <div key={i} className="rdbg-match">
+                <span className="rdbg-match-sim">{m.similarity?.toFixed(3)}</span>
+                <span className="rdbg-match-score">→ {m.score?.toFixed(2)}</span>
+                <span className="rdbg-match-q">
+                  {m.question}
+                  <span className="rdbg-cat">[{m.category}]</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 // ─── CSS ──────────────────────────────────────────────────────────────────────
 
 const CSS = `
@@ -512,6 +591,43 @@ body {
 .dbg-excerpt-meta { font-size: 0.75rem; color: var(--text-2); margin-bottom: 6px; }
 .dbg-excerpt-text { font-size: 0.75rem; color: var(--text-2); white-space: pre-wrap; line-height: 1.45; }
 
+/* ── Router Debug Panel ── */
+.rdbg-details {
+  background: #f8f9ff; border: 1px solid #c7d2fe;
+  border-radius: var(--radius-sm); overflow: hidden; margin-top: 10px;
+}
+.rdbg-details > summary {
+  padding: 7px 12px; cursor: pointer; list-style: none;
+  font: 700 0.70rem 'Inter', sans-serif; text-transform: uppercase;
+  letter-spacing: .05em; color: #6366f1;
+  display: flex; align-items: center; gap: 6px; user-select: none;
+}
+.rdbg-details > summary::-webkit-details-marker { display: none; }
+.rdbg-details[open] > summary { border-bottom: 1px solid #c7d2fe; }
+.rdbg-body { padding: 12px 14px; font-family: 'Inter', monospace; font-size: 0.76rem; color: var(--text-2); }
+.rdbg-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.rdbg-label { width: 170px; flex-shrink: 0; color: var(--muted); font-size: 0.73rem; }
+.rdbg-bar-wrap { flex: 1; background: #e0e7ff; border-radius: 99px; height: 8px; overflow: hidden; }
+.rdbg-bar { height: 100%; border-radius: 99px; background: #6366f1; transition: width .3s; }
+.rdbg-val { width: 38px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.73rem; }
+.rdbg-mode-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 0.72rem; font-weight: 700;
+  letter-spacing: .03em; text-transform: uppercase;
+}
+.rdbg-mode-rag { background: #dcfce7; color: #15803d; }
+.rdbg-mode-bk  { background: #fef9c3; color: #854d0e; }
+.rdbg-matches { margin-top: 10px; }
+.rdbg-match { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; font-size: 0.73rem; }
+.rdbg-match-sim { width: 40px; flex-shrink: 0; color: #6366f1; font-variant-numeric: tabular-nums; }
+.rdbg-match-score { width: 34px; flex-shrink: 0; color: var(--muted); }
+.rdbg-match-q { color: var(--text-2); }
+.rdbg-cat { font-size: 0.66rem; color: var(--muted); margin-left: 4px; }
+.rdbg-threshold-line { position: relative; height: 100%; }
+.rdbg-threshold-mark {
+  position: absolute; top: -2px; height: 12px; width: 2px;
+  background: #f59e0b; border-radius: 1px;
+}
+
 /* ── Misc ── */
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .spacer { margin-top: 14px; }
@@ -641,6 +757,7 @@ export default function App() {
   const [sessionStatuses, setSessionStatuses] = useState(() => new Map());
   const [sessionErrors, setSessionErrors] = useState(() => new Map());
   const [sessionDebugs, setSessionDebugs] = useState(() => new Map());
+  const [sessionRoutingDebugs, setSessionRoutingDebugs] = useState(() => new Map());
   const [chatInput, setChatInput] = useState("");
   const [promptFormat, setPromptFormat] = useState(null);
 
@@ -708,6 +825,7 @@ export default function App() {
   const chatStatus = sessionStatuses.get(_sessionKey) ?? "idle";
   const chatError = sessionErrors.get(_sessionKey) ?? "";
   const chatDebug = sessionDebugs.get(_sessionKey) ?? null;
+  const chatRoutingDebug = sessionRoutingDebugs.get(_sessionKey) ?? null;
   const isChatSending = chatStatus === "sending";
 
   // ── On Mount ──────────────────────────────────────────────────────────────
@@ -1187,7 +1305,9 @@ export default function App() {
           if (!line.startsWith("data: ")) continue;
           let ev;
           try { ev = JSON.parse(line.slice(6)); } catch { continue; }
-          if (ev.type === "token") {
+          if (ev.type === "routing_debug") {
+            setSessionRoutingDebugs((prev) => { const m = new Map(prev); m.set(sendKey, ev); return m; });
+          } else if (ev.type === "token") {
             setSessionChats((prev) => {
               const m = new Map(prev);
               const msgs = [...(m.get(sendKey) ?? [])];
@@ -1868,6 +1988,9 @@ export default function App() {
           </>
         )}
 
+        {/* Router Debug */}
+        <RouterDebugPanel debug={chatRoutingDebug} />
+
         {/* Debug */}
         {chatDebug && (
           <details className="dbg-details">
@@ -2340,6 +2463,9 @@ export default function App() {
                 </div>
               </details>
             )}
+
+            {/* Router Debug */}
+            <RouterDebugPanel debug={examDebug?.routing_debug} />
 
             {/* Grading debug */}
             {examDebug && (
